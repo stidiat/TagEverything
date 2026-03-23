@@ -19,6 +19,13 @@ using TagEverything.UI.Views;
 
 namespace TagEverything.UI.ViewModels
 {
+    public class TagSummary
+    {
+        public string Name { get; set; } = string.Empty;
+        public int Count { get; set; }
+        public string DisplayText => $"{Name} ({Count})";
+    }
+
     public partial class MainViewModel : ObservableObject
     {
         private readonly LibraryDbContext _dbContext;
@@ -27,6 +34,15 @@ namespace TagEverything.UI.ViewModels
 
         [ObservableProperty]
         private ObservableCollection<FileRecord> _files = new();
+
+        [ObservableProperty]
+        private ObservableCollection<string> _searchTags = new();
+
+        [ObservableProperty]
+        private ObservableCollection<TagSummary> _availableTags = new();
+
+        [ObservableProperty]
+        private ObservableCollection<TagSummary> _filteredAvailableTags = new();
 
         private string _searchQuery = string.Empty;
         public string SearchQuery
@@ -46,6 +62,9 @@ namespace TagEverything.UI.ViewModels
 
         [ObservableProperty]
         private int _selectedFilesCount = 0;
+
+        [ObservableProperty]
+        private bool _isListView = false;
 
         public MainViewModel(LibraryDbContext dbContext, LibraryMonitorService monitorService)
         {
@@ -82,15 +101,68 @@ namespace TagEverything.UI.ViewModels
             }
         }
 
+        [RelayCommand]
+        private void RemoveSearchTag(string tag)
+        {
+            if (SearchTags.Contains(tag))
+            {
+                SearchTags.Remove(tag);
+                UpdateFilteredAvailableTags();
+                _ = LoadFilesAsync(); // Re-trigger search
+            }
+        }
+
+        public void UpdateFilteredAvailableTags()
+        {
+            App.Current.Dispatcher.Invoke(() =>
+            {
+                FilteredAvailableTags.Clear();
+                foreach (var tag in AvailableTags)
+                {
+                    if (!SearchTags.Contains(tag.Name, StringComparer.OrdinalIgnoreCase))
+                    {
+                        FilteredAvailableTags.Add(tag);
+                    }
+                }
+            });
+        }
+
         public async Task LoadFilesAsync()
         {
             var query = _dbContext.Files.Include(f => f.Tags).AsQueryable();
 
+            // Load available tags summary for the dropdown (before filtering)
+            var allTags = await _dbContext.Tags.Include(t => t.Files).ToListAsync();
+            var summaries = allTags
+                .Where(t => t.Files.Count > 0)
+                .Select(t => new TagSummary { Name = t.Name, Count = t.Files.Count })
+                .OrderByDescending(t => t.Count)
+                .ThenBy(t => t.Name)
+                .ToList();
+            
+            App.Current.Dispatcher.Invoke(() =>
+            {
+                AvailableTags.Clear();
+                foreach (var summary in summaries)
+                {
+                    AvailableTags.Add(summary);
+                }
+            });
+            UpdateFilteredAvailableTags();
+
+            // Filter by selected tags
+            foreach (var tag in SearchTags)
+            {
+                query = query.Where(f => f.Tags.Any(t => t.Name == tag));
+            }
+
+            // Filter by remaining query (filename)
             if (!string.IsNullOrWhiteSpace(SearchQuery))
             {
                 var keywords = SearchQuery.Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 foreach (var keyword in keywords)
                 {
+                    // Fallback to legacy tag search if they somehow type #tag without space
                     var isTagSearch = keyword.StartsWith("#");
                     var searchWord = isTagSearch ? keyword.Substring(1) : keyword;
 
@@ -127,30 +199,15 @@ namespace TagEverything.UI.ViewModels
         [RelayCommand]
         private async Task OpenSettingsAsync()
         {
-            var dialog = new Ookii.Dialogs.Wpf.VistaFolderBrowserDialog
+            var settingsWindow = new SettingsWindow
             {
-                Description = "选择新的库文件夹",
-                UseDescriptionForTitle = true,
-                SelectedPath = App.Settings.Current.LibraryPath
+                Owner = Application.Current.MainWindow
             };
-
-            if (dialog.ShowDialog() == true && dialog.SelectedPath != App.Settings.Current.LibraryPath)
+            
+            settingsWindow.ShowDialog();
+            
+            if (settingsWindow.PathChanged)
             {
-                App.Settings.Current.LibraryPath = dialog.SelectedPath;
-                App.Settings.Save();
-
-                // Re-run migrations for new DB
-                using (var scope = App.ServiceProvider.CreateScope())
-                {
-                    var dbContext = scope.ServiceProvider.GetRequiredService<LibraryDbContext>();
-                    dbContext.Database.Migrate();
-                }
-
-                // Update Monitor and FileService
-                App.ServiceProvider.GetRequiredService<FileManagementService>().UpdateLibraryRoot(dialog.SelectedPath);
-                _monitorService.UpdatePath(dialog.SelectedPath);
-
-                // Reload
                 await LoadFilesAsync();
             }
         }
@@ -179,21 +236,87 @@ namespace TagEverything.UI.ViewModels
         {
             if (record == null) return;
 
-            var editWindow = new TagEditWindow(record);
-            // Must be owned by MainWindow
-            editWindow.Owner = Application.Current.MainWindow;
-            
+            var editWindow = new TagEditWindow(record)
+            {
+                Owner = Application.Current.MainWindow
+            };
             if (editWindow.ShowDialog() == true)
             {
-                // Give DB time to write changes or refresh to fetch correctly
                 await LoadFilesAsync();
             }
-            else 
+            else
             {
-                // Even if cancelled, we should reload files just in case the context 
-                // got messy or a background file watcher event fired during the dialog.
-                // EF Core sometimes has tracked entities getting stale.
                 await LoadFilesAsync();
+            }
+        }
+
+        [RelayCommand]
+        private async Task EditMultipleTagsAsync(object param)
+        {
+            try
+            {
+                var files = param as IEnumerable<FileRecord> ?? Files.Where(f => f.IsSelected);
+                var selectedList = files.ToList();
+
+                if (!selectedList.Any()) return;
+
+                var editWindow = new BatchTagEditWindow(selectedList)
+                {
+                    Owner = Application.Current.MainWindow
+                };
+
+                if (editWindow.ShowDialog() == true)
+                {
+                    using var scope = App.ServiceProvider.CreateScope();
+                    var dbContext = scope.ServiceProvider.GetRequiredService<LibraryDbContext>();
+
+                    var tagsToAdd = editWindow.TagsToAdd.ToList();
+                    var tagsToRemove = editWindow.CommonTags.Where(t => t.IsMarkedForRemoval).Select(t => t.Name).ToList();
+
+                    var fileIds = selectedList.Select(f => f.Id).ToList();
+                    var dbFiles = await dbContext.Files.Include(f => f.Tags).Where(f => fileIds.Contains(f.Id)).ToListAsync();
+
+                    foreach (var dbFile in dbFiles)
+                    {
+                        // Remove tags
+                        foreach (var tagToRemove in tagsToRemove)
+                        {
+                            var tag = dbFile.Tags.FirstOrDefault(t => t.Name == tagToRemove);
+                            if (tag != null)
+                            {
+                                dbFile.Tags.Remove(tag);
+                            }
+                        }
+
+                        // Add tags
+                        foreach (var tagToAdd in tagsToAdd)
+                        {
+                            if (!dbFile.Tags.Any(t => string.Equals(t.Name, tagToAdd, StringComparison.OrdinalIgnoreCase)))
+                            {
+                                // First check the local context for tracking, then the database
+                                var existingTag = dbContext.Tags.Local.FirstOrDefault(t => string.Equals(t.Name, tagToAdd, StringComparison.OrdinalIgnoreCase));
+                                if (existingTag == null)
+                                {
+                                    existingTag = await dbContext.Tags.FirstOrDefaultAsync(t => t.Name == tagToAdd);
+                                }
+                                
+                                if (existingTag == null)
+                                {
+                                    existingTag = new Tag { Name = tagToAdd };
+                                    dbContext.Tags.Add(existingTag);
+                                }
+                                dbFile.Tags.Add(existingTag);
+                            }
+                        }
+                    }
+
+                    await dbContext.SaveChangesAsync();
+                    await LoadFilesAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"批量修改标签失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -234,8 +357,16 @@ namespace TagEverything.UI.ViewModels
             }
         }
         [RelayCommand]
-        private async Task DeleteMultipleFilesAsync(IEnumerable<FileRecord> records)
+        private async Task DeleteMultipleFilesAsync(object param)
         {
+            // Because parameter might be the entire ObservableCollection from the binding,
+            // we filter out only those that are selected
+            IEnumerable<FileRecord>? records = null;
+            if (param is IEnumerable<FileRecord> collection)
+            {
+                records = collection.Where(f => f.IsSelected).ToList();
+            }
+
             if (records == null || !records.Any()) return;
 
             var recordList = records.ToList();

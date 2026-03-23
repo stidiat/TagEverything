@@ -1,0 +1,94 @@
+<Window x:Class="TagEverything.UI.Views.BatchTagEditWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+        xmlns:converters="clr-namespace:TagEverything.UI.Converters"
+        mc:Ignorable="d"
+        Title="批量修改标签" Height="450" Width="400"
+        WindowStartupLocation="CenterOwner"
+        Loaded="Window_Loaded">
+    <Window.Resources>
+        <converters:TagColorConverter x:Key="TagColorConverter" />
+        <converters:InverseBooleanToVisibilityConverter x:Key="InverseBooleanToVisibilityConverter" />
+    </Window.Resources>
+    
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Text="{Binding HeaderText}" TextWrapping="Wrap" FontWeight="Bold" Margin="0,0,0,16" Grid.Row="0"/>
+
+        <StackPanel Grid.Row="1" Margin="0,0,0,16">
+            <TextBlock Text="添加新标签 (空格或逗号分隔):" FontWeight="SemiBold"/>
+            <TextBox x:Name="TagInputBox" KeyDown="TagInputBox_KeyDown" TextChanged="TagInputBox_TextChanged"
+                     materialDesign:HintAssist.Hint="输入要添加的标签..."/>
+            
+            <ItemsControl x:Name="TagsToAddList" Margin="0,8,0,0" ItemsSource="{Binding TagsToAdd}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Background="{Binding Converter={StaticResource TagColorConverter}}" 
+                                BorderBrush="{Binding Converter={StaticResource TagColorConverter}}" BorderThickness="1" 
+                                CornerRadius="12" Margin="0,0,4,4" Padding="8,4">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding}" Foreground="White" VerticalAlignment="Center"/>
+                                <Button CommandParameter="{Binding}" Click="RemoveNewTag_Click" Style="{StaticResource MaterialDesignToolButton}" 
+                                        Width="16" Height="16" Padding="0" Margin="4,0,0,0">
+                                    <materialDesign:PackIcon Kind="Close" Width="12" Height="12" Foreground="White"/>
+                                </Button>
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
+
+        <StackPanel Grid.Row="2">
+            <TextBlock Text="共有标签 (点击删除):" FontWeight="SemiBold" Margin="0,0,0,8"/>
+            <TextBlock Text="选中的文件没有共有的标签" FontStyle="Italic" Foreground="Gray" 
+                       Visibility="{Binding HasCommonTags, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+            
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <ItemsControl x:Name="CommonTagsList" ItemsSource="{Binding CommonTags}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Background="{Binding Name, Converter={StaticResource TagColorConverter}}" 
+                                    BorderBrush="{Binding Name, Converter={StaticResource TagColorConverter}}" BorderThickness="1" 
+                                    CornerRadius="12" Margin="0,0,4,4" Padding="8,4"
+                                    Opacity="{Binding Opacity}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding Name}" Foreground="White" VerticalAlignment="Center"
+                                               TextDecorations="{Binding TextDecoration}"/>
+                                    <Button CommandParameter="{Binding}" Click="ToggleCommonTagRemoval_Click" Style="{StaticResource MaterialDesignToolButton}" 
+                                            Width="16" Height="16" Padding="0" Margin="4,0,0,0">
+                                        <materialDesign:PackIcon Kind="{Binding IconKind}" Width="12" Height="12" Foreground="White"/>
+                                    </Button>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </StackPanel>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button Content="取消" Style="{StaticResource MaterialDesignOutlinedButton}" Margin="0,0,8,0" Click="Cancel_Click"/>
+            <Button Content="保存修改" Click="Save_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>

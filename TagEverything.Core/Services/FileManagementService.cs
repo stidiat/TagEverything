@@ -28,9 +28,11 @@ namespace TagEverything.Core.Services
             var fileInfo = new FileInfo(sourceFilePath);
             var now = DateTime.UtcNow;
             
-            // Generate {UTC时间戳}_{原始文件名}
+            // Generate {原始文件名}_{UTC时间戳}
             var timestamp = new DateTimeOffset(now).ToUnixTimeSeconds();
-            var savedName = $"{timestamp}_{fileInfo.Name}";
+            var fileNameWithoutExt = Path.GetFileNameWithoutExtension(fileInfo.Name);
+            var extension = Path.GetExtension(fileInfo.Name);
+            var savedName = $"{fileNameWithoutExt}_{timestamp}{extension}";
 
             // Subdirectory 按年/月 - Removed as per user request, files go directly to root
             var targetDirPath = _libraryRootPath;

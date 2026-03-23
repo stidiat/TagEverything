@@ -7,11 +7,15 @@
         xmlns:converters="clr-namespace:TagEverything.UI.Converters"
         mc:Ignorable="d"
         Title="TagEverything - 文件管理" Height="600" Width="1000"
-        AllowDrop="True" Drop="Window_Drop">
+        AllowDrop="True" Drop="Window_Drop"
+        PreviewMouseDown="Window_PreviewMouseDown">
     <Window.Resources>
         <converters:TagColorConverter x:Key="TagColorConverter" />
         <converters:NullToVisibilityConverter x:Key="NullToVisibilityConverter" />
         <converters:SelectionCountToVisibilityConverter x:Key="SelectionCountToVisibilityConverter" />
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+        <converters:InverseBooleanToVisibilityConverter x:Key="InverseBooleanToVisibilityConverter" />
+        <converters:FileSizeConverter x:Key="FileSizeConverter" />
     </Window.Resources>
     <Grid>
         <Grid.RowDefinitions>
@@ -31,34 +35,116 @@
                     <materialDesign:PackIcon Kind="Cog" Width="24" Height="24" Foreground="White"/>
                 </Button>
 
+                <ToggleButton DockPanel.Dock="Right" IsChecked="{Binding IsListView}" Style="{StaticResource MaterialDesignActionToggleButton}" Margin="10,0,0,0" ToolTip="切换视图">
+                    <ToggleButton.Content>
+                        <materialDesign:PackIcon Kind="ViewGrid" Width="24" Height="24"/>
+                    </ToggleButton.Content>
+                    <materialDesign:ToggleButtonAssist.OnContent>
+                        <materialDesign:PackIcon Kind="ViewList" Width="24" Height="24"/>
+                    </materialDesign:ToggleButtonAssist.OnContent>
+                </ToggleButton>
+
                 <Button DockPanel.Dock="Right" Content="导入文件" Command="{Binding ImportCommand}" Click="ImportButton_Click" Margin="10,0,0,0"/>
 
-                <TextBox DockPanel.Dock="Right" Width="300" HorizontalAlignment="Right"
-                         materialDesign:HintAssist.Hint="搜索 (支持 #标签 文件名)"
-                         materialDesign:TextFieldAssist.HasFilledTextField="True"
-                         materialDesign:TextFieldAssist.TextFieldCornerRadius="4"
-                         materialDesign:TextFieldAssist.UnderlineBrush="Transparent"
-                         Background="#80FFFFFF" Padding="8,6"
-                         Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}"
-                         Foreground="Black" CaretBrush="Black">
-                    <TextBox.InputBindings>
-                        <KeyBinding Key="Enter" Command="{Binding SearchCommand}"/>
-                    </TextBox.InputBindings>
-                </TextBox>
+                <Border x:Name="SearchAreaBorder" DockPanel.Dock="Right" Background="#80FFFFFF" CornerRadius="4" Width="400" HorizontalAlignment="Right" Padding="4,2">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        
+                        <ItemsControl Grid.Column="0" ItemsSource="{Binding SearchTags}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel VerticalAlignment="Center"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="{Binding Converter={StaticResource TagColorConverter}}" 
+                                            BorderBrush="{Binding Converter={StaticResource TagColorConverter}}" BorderThickness="1" 
+                                            CornerRadius="10" Margin="0,0,4,0" Padding="6,2">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="{Binding}" Foreground="White" VerticalAlignment="Center" FontSize="11"/>
+                                            <Button Command="{Binding DataContext.RemoveSearchTagCommand, RelativeSource={RelativeSource AncestorType=Window}}" 
+                                                    CommandParameter="{Binding}" 
+                                                    Style="{StaticResource MaterialDesignToolButton}" 
+                                                    Width="14" Height="14" Padding="0" Margin="4,0,0,0">
+                                                <materialDesign:PackIcon Kind="Close" Width="10" Height="10" Foreground="White"/>
+                                            </Button>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <TextBox x:Name="SearchBox" Grid.Column="1"
+                                 materialDesign:HintAssist.Hint="搜索 (支持 #标签 空格或逗号分隔)"
+                                 materialDesign:TextFieldAssist.UnderlineBrush="Transparent"
+                                 BorderThickness="0" Background="Transparent"
+                                 Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}"
+                                 Foreground="Black" CaretBrush="Black"
+                                 VerticalAlignment="Center"
+                                 TextChanged="SearchBox_TextChanged"
+                                 KeyDown="SearchBox_KeyDown"
+                                 PreviewMouseLeftButtonUp="SearchBox_PreviewMouseLeftButtonUp">
+                            <TextBox.InputBindings>
+                                <KeyBinding Key="Enter" Command="{Binding SearchCommand}"/>
+                            </TextBox.InputBindings>
+                        </TextBox>
+
+                        <!-- Tag Suggestion Popup -->
+                        <Popup x:Name="TagSuggestionsPopup" PlacementTarget="{Binding ElementName=SearchAreaBorder}" 
+                               Placement="Bottom" StaysOpen="False" AllowsTransparency="True" MaxHeight="300" Width="400"
+                               PopupAnimation="Fade">
+                            <Border Background="White" BorderBrush="LightGray" BorderThickness="1" CornerRadius="4" Margin="0,4,0,0" Padding="8">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="10" Opacity="0.2" ShadowDepth="2"/>
+                                </Border.Effect>
+                                <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="280">
+                                    <ItemsControl ItemsSource="{Binding FilteredAvailableTags}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Button Style="{StaticResource MaterialDesignFlatButton}" 
+                                                        Click="TagSuggestion_Click"
+                                                        CommandParameter="{Binding Name}"
+                                                        Padding="4,2" Margin="0,0,4,4" Height="Auto">
+                                                    <Border Background="{Binding Name, Converter={StaticResource TagColorConverter}}" 
+                                                            BorderBrush="{Binding Name, Converter={StaticResource TagColorConverter}}" BorderThickness="1" 
+                                                            CornerRadius="10" Padding="6,2">
+                                                        <TextBlock Text="{Binding Name}" Foreground="White" FontSize="11" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                </Button>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                </Border>
             </DockPanel>
         </materialDesign:ColorZone>
 
         <!-- Main Content -->
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="16" x:Name="MainScrollViewer"
-                      PreviewMouseLeftButtonDown="MainScrollViewer_PreviewMouseLeftButtonDown"
-                      MouseMove="MainScrollViewer_PreviewMouseMove"
-                      MouseLeftButtonUp="MainScrollViewer_PreviewMouseLeftButtonUp">
-            <Grid>
-                <ListBox ItemsSource="{Binding Files}" SelectionMode="Extended" SelectedItem="{Binding SelectedFile, Mode=TwoWay}"
+        <Grid Grid.Row="1" Background="Transparent" x:Name="MainGrid"
+              PreviewMouseLeftButtonDown="MainScrollViewer_PreviewMouseLeftButtonDown"
+              MouseMove="MainScrollViewer_PreviewMouseMove"
+              MouseLeftButtonUp="MainScrollViewer_PreviewMouseLeftButtonUp">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16" x:Name="MainScrollViewer" PreviewMouseWheel="MainScrollViewer_PreviewMouseWheel">
+                <Grid>
+                    <!-- Card View -->
+                    <ListBox ItemsSource="{Binding Files}" SelectionMode="Extended" SelectedItem="{Binding SelectedFile, Mode=TwoWay}"
                          Background="Transparent" BorderThickness="0"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                          SelectionChanged="ListBox_SelectionChanged"
                          Tag="{Binding}"
+                         Visibility="{Binding IsListView, Converter={StaticResource InverseBooleanToVisibilityConverter}}"
                          x:Name="FilesListBox">
                     <!-- Bind multiple selections using attached property or code-behind. For simplicity, we can pass SelectedItems in code behind -->
                     <ListBox.ItemsPanel>
@@ -68,6 +154,7 @@
                     </ListBox.ItemsPanel>
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
+                            <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}" />
                             <Setter Property="Padding" Value="0"/>
                             <Setter Property="Margin" Value="4"/>
                             <Setter Property="BorderThickness" Value="0"/>
@@ -105,7 +192,13 @@
                     </ListBox.ItemContainerStyle>
                     <ListBox.ContextMenu>
                         <ContextMenu DataContext="{Binding RelativeSource={RelativeSource Self}, Path=PlacementTarget.Tag}">
-                            <MenuItem Header="删除选中的文件" Click="DeleteSelectedFiles_Click"
+                            <MenuItem Header="编辑标签" Click="EditSelectedTags_Click"
+                                      Visibility="{Binding SelectedFilesCount, Converter={StaticResource SelectionCountToVisibilityConverter}, ConverterParameter='Multiple'}">
+                                <MenuItem.Icon>
+                                    <materialDesign:PackIcon Kind="TagMultiple" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="删除文件" Click="DeleteSelectedFiles_Click"
                                       Visibility="{Binding SelectedFilesCount, Converter={StaticResource SelectionCountToVisibilityConverter}, ConverterParameter='Multiple'}">
                                 <MenuItem.Icon>
                                     <materialDesign:PackIcon Kind="Delete" Foreground="Red" />
@@ -136,17 +229,29 @@
                                                 <materialDesign:PackIcon Kind="Delete" Foreground="Red" />
                                             </MenuItem.Icon>
                                         </MenuItem>
+                                        <MenuItem Header="编辑标签" Click="EditSelectedTags_Click"
+                                                  Visibility="{Binding SelectedFilesCount, Converter={StaticResource SelectionCountToVisibilityConverter}, ConverterParameter='Multiple'}">
+                                            <MenuItem.Icon>
+                                                <materialDesign:PackIcon Kind="TagMultiple" />
+                                            </MenuItem.Icon>
+                                        </MenuItem>
+                                        <MenuItem Header="删除文件" Command="{Binding DeleteMultipleFilesCommand}" CommandParameter="{Binding Files}"
+                                                  Visibility="{Binding SelectedFilesCount, Converter={StaticResource SelectionCountToVisibilityConverter}, ConverterParameter='Multiple'}">
+                                            <MenuItem.Icon>
+                                                <materialDesign:PackIcon Kind="DeleteSweep" Foreground="Red" />
+                                            </MenuItem.Icon>
+                                        </MenuItem>
                                     </ContextMenu>
                                 </materialDesign:Card.ContextMenu>
                                 <StackPanel>
                                     <Border Height="100" Margin="0,0,0,10" Background="{DynamicResource PrimaryHueLightBrush}" CornerRadius="4">
                                         <Grid>
                                             <materialDesign:PackIcon Kind="File" Width="48" Height="48" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource PrimaryHueMidBrush}" Visibility="{Binding Thumbnail, Converter={StaticResource NullToVisibilityConverter}, FallbackValue=Visible}"/>
-                                            <Image Source="{Binding Thumbnail}" Stretch="UniformToFill"/>
+                                            <Image Source="{Binding Thumbnail}" Stretch="UniformToFill" RenderOptions.BitmapScalingMode="HighQuality"/>
                                         </Grid>
                                     </Border>
                                     <TextBlock Text="{Binding OriginalName}" FontWeight="Bold" TextTrimming="CharacterEllipsis" ToolTip="{Binding OriginalName}" Margin="0,0,0,4"/>
-                                    <TextBlock Text="{Binding Size}" FontSize="11" Opacity="0.7"/>
+                                    <TextBlock Text="{Binding Size, Converter={StaticResource FileSizeConverter}}" FontSize="11" Opacity="0.7"/>
                                     
                                     <ItemsControl ItemsSource="{Binding Tags}" Margin="0,8,0,0">
                                         <ItemsControl.ItemsPanel>
@@ -176,11 +281,79 @@
                     </ListBox.ItemTemplate>
                 </ListBox>
 
-                <Canvas x:Name="SelectionCanvas" IsHitTestVisible="False">
-                    <Rectangle x:Name="SelectionBox" Fill="#400078D7" Stroke="#FF0078D7" StrokeThickness="1" Visibility="Collapsed"/>
-                </Canvas>
-            </Grid>
-        </ScrollViewer>
+                    <!-- List View -->
+                    <DataGrid ItemsSource="{Binding Files}" AutoGenerateColumns="False" IsReadOnly="True"
+                              Visibility="{Binding IsListView, Converter={StaticResource BooleanToVisibilityConverter}}"
+                              SelectionMode="Extended" SelectionUnit="FullRow"
+                              SelectionChanged="DataGrid_SelectionChanged"
+                              HeadersVisibility="Column" Background="Transparent"
+                              x:Name="FilesDataGrid" Tag="{Binding}">
+                        <DataGrid.InputBindings>
+                            <MouseBinding Gesture="LeftDoubleClick" Command="{Binding OpenFileCommand}" CommandParameter="{Binding SelectedItem, ElementName=FilesDataGrid}" />
+                        </DataGrid.InputBindings>
+                        <DataGrid.ContextMenu>
+                            <ContextMenu DataContext="{Binding RelativeSource={RelativeSource Self}, Path=PlacementTarget.Tag}">
+                                <MenuItem Header="编辑标签" Command="{Binding EditTagsCommand}" CommandParameter="{Binding SelectedFile}"
+                                          Visibility="{Binding SelectedFilesCount, Converter={StaticResource SelectionCountToVisibilityConverter}, ConverterParameter='Single'}">
+                                    <MenuItem.Icon>
+                                        <materialDesign:PackIcon Kind="TagEdit" />
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <MenuItem Header="删除文件" Command="{Binding DeleteFileCommand}" CommandParameter="{Binding SelectedFile}"
+                                          Visibility="{Binding SelectedFilesCount, Converter={StaticResource SelectionCountToVisibilityConverter}, ConverterParameter='Single'}">
+                                    <MenuItem.Icon>
+                                        <materialDesign:PackIcon Kind="Delete" Foreground="Red" />
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <MenuItem Header="编辑标签" Click="EditSelectedTagsDataGrid_Click"
+                                          Visibility="{Binding SelectedFilesCount, Converter={StaticResource SelectionCountToVisibilityConverter}, ConverterParameter='Multiple'}">
+                                    <MenuItem.Icon>
+                                        <materialDesign:PackIcon Kind="TagMultiple" />
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <MenuItem Header="删除文件" Click="DeleteSelectedFilesDataGrid_Click"
+                                          Visibility="{Binding SelectedFilesCount, Converter={StaticResource SelectionCountToVisibilityConverter}, ConverterParameter='Multiple'}">
+                                    <MenuItem.Icon>
+                                        <materialDesign:PackIcon Kind="DeleteSweep" Foreground="Red" />
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                            </ContextMenu>
+                        </DataGrid.ContextMenu>
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="文件名" Binding="{Binding OriginalName}" Width="3*" />
+                            <DataGridTextColumn Header="大小" Binding="{Binding Size, Converter={StaticResource FileSizeConverter}}" Width="1*" />
+                            <DataGridTemplateColumn Header="标签" Width="4*">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <ItemsControl ItemsSource="{Binding Tags}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <WrapPanel />
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Background="{Binding Name, Converter={StaticResource TagColorConverter}}" 
+                                                            BorderBrush="{Binding Name, Converter={StaticResource TagColorConverter}}" BorderThickness="1"
+                                                            CornerRadius="4" Margin="0,0,4,0" Padding="4,2">
+                                                        <TextBlock Text="{Binding Name}" FontSize="10" Foreground="White"/>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="创建时间" Binding="{Binding FileCreationTime, StringFormat=\{0:g\}}" Width="2*" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+
+                    <Canvas x:Name="SelectionCanvas" IsHitTestVisible="False">
+                        <Rectangle x:Name="SelectionBox" Fill="#400078D7" Stroke="#FF0078D7" StrokeThickness="1" Visibility="Collapsed"/>
+                    </Canvas>
+                </Grid>
+            </ScrollViewer>
+        </Grid>
         
         <!-- Drop Overlay -->
         <Border x:Name="DropOverlay" Grid.Row="1" Background="#80000000" Visibility="Collapsed" IsHitTestVisible="False">

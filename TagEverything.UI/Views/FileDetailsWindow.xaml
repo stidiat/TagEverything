@@ -26,8 +26,8 @@
         </ScrollViewer>
 
         <StackPanel Grid.Row="2" Margin="0,16,0,16">
-            <TextBlock Text="标签 (逗号或回车分隔):"/>
-            <TextBox x:Name="TagInputBox" KeyDown="TagInputBox_KeyDown" TextChanged="TagInputBox_TextChanged"
+                <TextBlock Text="标签 (空格或逗号分隔):"/>
+                <TextBox x:Name="TagInputBox" KeyDown="TagInputBox_KeyDown" TextChanged="TagInputBox_TextChanged"
                      materialDesign:HintAssist.Hint="输入标签..."/>
             
             <ItemsControl x:Name="TagsList" Margin="0,8,0,0">

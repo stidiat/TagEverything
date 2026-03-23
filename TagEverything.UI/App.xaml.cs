@@ -1,5 +1,6 @@
-﻿using System;
+﻿﻿﻿﻿﻿﻿﻿﻿﻿using System;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,8 +17,34 @@ namespace TagEverything.UI
         public static IServiceProvider ServiceProvider { get; private set; } = null!;
         public static SettingsService Settings { get; private set; } = null!;
 
+        public App()
+        {
+            // Register a custom assembly resolver to look in the bin subdirectory
+            AppDomain.CurrentDomain.AssemblyResolve += CurrentDomain_AssemblyResolve;
+        }
+
+        private System.Reflection.Assembly? CurrentDomain_AssemblyResolve(object? sender, ResolveEventArgs args)
+        {
+            string assemblyName = new System.Reflection.AssemblyName(args.Name).Name + ".dll";
+            string binPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "bin", assemblyName);
+            
+            if (File.Exists(binPath))
+            {
+                return System.Reflection.Assembly.LoadFrom(binPath);
+            }
+            
+            return null;
+        }
+
         private void OnStartup(object sender, StartupEventArgs e)
         {
+            // Pre-load SQLite library from bin folder if it exists
+            string sqlitePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "bin", "e_sqlite3.dll");
+            if (File.Exists(sqlitePath))
+            {
+                NativeLibrary.Load(sqlitePath);
+            }
+
             Settings = new SettingsService();
 
             if (string.IsNullOrEmpty(Settings.Current.LibraryPath))

@@ -17,45 +17,32 @@ namespace TagEverything.UI.Views
 {
     public partial class FileDetailsWindow : Window
     {
-        public string FilePath { get; set; }
+        public FileImportContext ImportContext { get; private set; }
         public bool Confirmed { get; private set; } = false;
 
         public ObservableCollection<string> Tags { get; set; } = new ObservableCollection<string>();
 
-        private string _metadataJson = string.Empty;
-        private string _fileHash = string.Empty;
-        private byte[]? _thumbnail;
-        private bool _isVideo = false;
-
-        public FileDetailsWindow(string filePath)
+        public FileDetailsWindow(FileImportContext context)
         {
-            FilePath = filePath;
+            ImportContext = context;
             InitializeComponent();
             DataContext = this;
             TagsList.ItemsSource = Tags;
         }
 
-        private async void Window_Loaded(object sender, RoutedEventArgs e)
+        public string FilePath => ImportContext.FilePath;
+
+        private void Window_Loaded(object sender, RoutedEventArgs e)
         {
-            var metaService = App.ServiceProvider.GetRequiredService<MetadataExtractionService>();
-            var hashService = App.ServiceProvider.GetRequiredService<HashService>();
-
-            var fileInfo = new FileInfo(FilePath);
-            _isVideo = metaService.IsVideoFile(fileInfo.Extension);
-
             try
             {
-                _fileHash = await hashService.CalculateSha256Async(FilePath);
-                _metadataJson = await metaService.ExtractMetadataAsync(FilePath, _isVideo);
-                _thumbnail = await metaService.ExtractThumbnailAsync(FilePath, fileInfo.Extension);
-
                 // Populate UI
-                AddMetadataItem("文件大小", FormatSize(fileInfo.Length));
-                AddMetadataItem("SHA-256", _fileHash);
+                AddMetadataItem("文件大小", FormatSize(ImportContext.Size));
+                AddMetadataItem("SHA-256", ImportContext.FileHash);
 
-                if (_isVideo)
+                if (ImportContext.IsVideo)
                 {
-                    var dict = JsonConvert.DeserializeObject<JObject>(_metadataJson);
+                    var dict = JsonConvert.DeserializeObject<JObject>(ImportContext.MetadataJson);
                     if (dict != null)
                     {
                         if (dict["Duration"] != null) AddMetadataItem("时长 (秒)", dict["Duration"]?.ToString() ?? "");
@@ -67,8 +54,8 @@ namespace TagEverything.UI.Views
                 }
                 else
                 {
-                    AddMetadataItem("创建时间", fileInfo.CreationTime.ToString("g"));
-                    AddMetadataItem("修改时间", fileInfo.LastWriteTime.ToString("g"));
+                    AddMetadataItem("创建时间", ImportContext.CreationTime.ToString("g"));
+                    AddMetadataItem("修改时间", ImportContext.LastWriteTime.ToString("g"));
                 }
 
                 ConfirmButton.IsEnabled = true;
@@ -105,14 +92,14 @@ namespace TagEverything.UI.Views
         {
             if (e.Key == Key.Enter)
             {
-                ProcessTagInput();
+                // Just prevent default beep or whatever, don't process tag
                 e.Handled = true;
             }
         }
 
         private void TagInputBox_TextChanged(object sender, TextChangedEventArgs e)
         {
-            if (TagInputBox.Text.Contains(","))
+            if (TagInputBox.Text.Contains(",") || TagInputBox.Text.Contains(" "))
             {
                 ProcessTagInput();
             }
@@ -121,7 +108,7 @@ namespace TagEverything.UI.Views
         private void ProcessTagInput()
         {
             var text = TagInputBox.Text;
-            var parts = text.Split(new[] { ',', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+            var parts = text.Split(new[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries);
 
             foreach (var part in parts)
             {
@@ -152,23 +139,23 @@ namespace TagEverything.UI.Views
             try
             {
                 var fileService = App.ServiceProvider.GetRequiredService<FileManagementService>();
-                var (savedName, relativePath) = await fileService.ImportFileAsync(FilePath, false);
+                var (savedName, relativePath) = await fileService.ImportFileAsync(ImportContext.FilePath, false);
 
                 using var scope = App.ServiceProvider.CreateScope();
                 var dbContext = scope.ServiceProvider.GetRequiredService<LibraryDbContext>();
 
                 var fileRecord = new FileRecord
                 {
-                    OriginalName = Path.GetFileName(FilePath),
+                    OriginalName = Path.GetFileName(ImportContext.FilePath),
                     SavedName = savedName,
                     RelativePath = relativePath,
-                    Size = new FileInfo(FilePath).Length,
-                    Hash = _fileHash,
-                    IsVideo = _isVideo,
-                    MetadataJson = _metadataJson,
-                    Thumbnail = _thumbnail,
-                    FileCreationTime = new FileInfo(FilePath).CreationTimeUtc,
-                    FileModificationTime = new FileInfo(FilePath).LastWriteTimeUtc
+                    Size = ImportContext.Size,
+                    Hash = ImportContext.FileHash,
+                    IsVideo = ImportContext.IsVideo,
+                    MetadataJson = ImportContext.MetadataJson,
+                    Thumbnail = ImportContext.Thumbnail,
+                    FileCreationTime = ImportContext.CreationTime.ToUniversalTime(),
+                    FileModificationTime = ImportContext.LastWriteTime.ToUniversalTime()
                 };
 
                 foreach (var tagName in Tags)

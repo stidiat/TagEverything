@@ -1,6 +1,8 @@
 using System;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -12,19 +14,23 @@ using TagEverything.Core.Models;
 
 namespace TagEverything.UI.Views
 {
-    public partial class TagEditWindow : Window
+    public partial class TagEditWindow : Window, INotifyPropertyChanged
     {
-        public ObservableCollection<string> Tags { get; set; } = new ObservableCollection<string>();
+        public ObservableCollection<string> TagsToAdd { get; set; } = new ObservableCollection<string>();
+        public ObservableCollection<SelectableTag> ExistingTags { get; set; } = new ObservableCollection<SelectableTag>();
         
+        public bool HasExistingTags => ExistingTags.Any();
+
         private readonly FileRecord _fileRecord;
 
         public TagEditWindow(FileRecord record)
         {
             _fileRecord = record;
             InitializeComponent();
-            DataContext = _fileRecord;
-            TagsList.ItemsSource = Tags;
+            DataContext = this;
         }
+
+        public string FilePath => _fileRecord.OriginalName;
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
@@ -32,8 +38,9 @@ namespace TagEverything.UI.Views
             {
                 foreach (var tag in _fileRecord.Tags)
                 {
-                    Tags.Add(tag.Name);
+                    ExistingTags.Add(new SelectableTag { Name = tag.Name });
                 }
+                OnPropertyChanged(nameof(HasExistingTags));
             }
         }
 
@@ -41,14 +48,14 @@ namespace TagEverything.UI.Views
         {
             if (e.Key == Key.Enter)
             {
-                ProcessTagInput();
+                // Just prevent default beep or whatever, don't process tag
                 e.Handled = true;
             }
         }
 
         private void TagInputBox_TextChanged(object sender, TextChangedEventArgs e)
         {
-            if (TagInputBox.Text.Contains(","))
+            if (TagInputBox.Text.Contains(",") || TagInputBox.Text.Contains(" "))
             {
                 ProcessTagInput();
             }
@@ -57,25 +64,34 @@ namespace TagEverything.UI.Views
         private void ProcessTagInput()
         {
             var text = TagInputBox.Text;
-            var parts = text.Split(new[] { ',', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+            var parts = text.Split(new[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries);
 
             foreach (var part in parts)
             {
                 var tag = part.Trim();
-                if (!string.IsNullOrEmpty(tag) && !Tags.Contains(tag, StringComparer.OrdinalIgnoreCase))
+                if (!string.IsNullOrEmpty(tag) && !TagsToAdd.Contains(tag, StringComparer.OrdinalIgnoreCase)
+                    && !ExistingTags.Any(et => string.Equals(et.Name, tag, StringComparison.OrdinalIgnoreCase)))
                 {
-                    Tags.Add(tag);
+                    TagsToAdd.Add(tag);
                 }
             }
 
             TagInputBox.Text = string.Empty;
         }
 
-        private void RemoveTag_Click(object sender, RoutedEventArgs e)
+        private void RemoveNewTag_Click(object sender, RoutedEventArgs e)
         {
             if (sender is Button btn && btn.CommandParameter is string tag)
             {
-                Tags.Remove(tag);
+                TagsToAdd.Remove(tag);
+            }
+        }
+
+        private void ToggleExistingTagRemoval_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button btn && btn.CommandParameter is SelectableTag tag)
+            {
+                tag.IsMarkedForRemoval = !tag.IsMarkedForRemoval;
             }
         }
 
@@ -92,25 +108,26 @@ namespace TagEverything.UI.Views
                 var record = await dbContext.Files.Include(f => f.Tags).FirstOrDefaultAsync(f => f.Id == _fileRecord.Id);
                 if (record != null)
                 {
-                    // Remove existing tags that are not in the new list
-                    var toRemove = record.Tags.Where(t => !Tags.Contains(t.Name, StringComparer.OrdinalIgnoreCase)).ToList();
+                    // Remove existing tags marked for removal
+                    var tagsToRemove = ExistingTags.Where(t => t.IsMarkedForRemoval).Select(t => t.Name).ToList();
+                    var toRemove = record.Tags.Where(t => tagsToRemove.Contains(t.Name)).ToList();
                     foreach (var tag in toRemove)
                     {
                         record.Tags.Remove(tag);
                     }
 
                     // Add new tags
-                    foreach (var tagName in Tags)
+                    foreach (var tagToAdd in TagsToAdd)
                     {
-                        if (!record.Tags.Any(t => t.Name.Equals(tagName, StringComparison.OrdinalIgnoreCase)))
+                        if (!record.Tags.Any(t => string.Equals(t.Name, tagToAdd, StringComparison.OrdinalIgnoreCase)))
                         {
-                            var dbTag = await dbContext.Tags.FirstOrDefaultAsync(t => t.Name.ToLower() == tagName.ToLower());
-                            if (dbTag == null)
+                            var existingTag = await dbContext.Tags.FirstOrDefaultAsync(t => t.Name == tagToAdd);
+                            if (existingTag == null)
                             {
-                                dbTag = new Tag { Name = tagName };
-                                dbContext.Tags.Add(dbTag);
+                                existingTag = new Tag { Name = tagToAdd };
+                                dbContext.Tags.Add(existingTag);
                             }
-                            record.Tags.Add(dbTag);
+                            record.Tags.Add(existingTag);
                         }
                     }
 
@@ -129,9 +146,14 @@ namespace TagEverything.UI.Views
 
         private void Cancel_Click(object sender, RoutedEventArgs e)
         {
-            // Do NOT mess with tracking context here, just close
             DialogResult = false;
             Close();
+        }
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+        protected void OnPropertyChanged([CallerMemberName] string? name = null)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
         }
     }
 }

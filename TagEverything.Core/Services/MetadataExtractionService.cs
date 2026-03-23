@@ -19,11 +19,23 @@ namespace TagEverything.Core.Services
             if (_ffmpegInitialized) return;
 
             var appDir = AppDomain.CurrentDomain.BaseDirectory;
-            FFmpeg.SetExecutablesPath(appDir);
-
-            if (!File.Exists(Path.Combine(appDir, "ffmpeg.exe")) || !File.Exists(Path.Combine(appDir, "ffprobe.exe")))
+            var binDir = Path.Combine(appDir, "bin");
+            
+            // Set FFmpeg to look in bin folder first, fallback to appDir
+            if (File.Exists(Path.Combine(binDir, "ffmpeg.exe")))
             {
-                await FFmpegDownloader.GetLatestVersion(FFmpegVersion.Official, appDir);
+                FFmpeg.SetExecutablesPath(binDir);
+            }
+            else
+            {
+                FFmpeg.SetExecutablesPath(appDir);
+            }
+
+            if (!File.Exists(Path.Combine(binDir, "ffmpeg.exe")) && !File.Exists(Path.Combine(appDir, "ffmpeg.exe")))
+            {
+                // Fallback downloader just in case the bundled exe goes missing
+                await FFmpegDownloader.GetLatestVersion(FFmpegVersion.Official, binDir);
+                FFmpeg.SetExecutablesPath(binDir);
             }
 
             _ffmpegInitialized = true;
@@ -93,11 +105,11 @@ namespace TagEverything.Core.Services
                         using var image = Image.Load(bytes);
                         image.Mutate(x => x.Resize(new ResizeOptions
                         {
-                            Size = new Size(300, 0),
+                            Size = new Size(800, 0),
                             Mode = ResizeMode.Max
                         }));
                         using var ms = new MemoryStream();
-                        image.SaveAsJpeg(ms);
+                        image.SaveAsJpeg(ms, new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = 90 });
                         return ms.ToArray();
                     }
                 }
@@ -106,11 +118,11 @@ namespace TagEverything.Core.Services
                     using var image = Image.Load(filePath);
                     image.Mutate(x => x.Resize(new ResizeOptions
                     {
-                        Size = new Size(300, 0),
+                        Size = new Size(800, 0),
                         Mode = ResizeMode.Max
                     }));
                     using var ms = new MemoryStream();
-                    image.SaveAsJpeg(ms);
+                    image.SaveAsJpeg(ms, new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = 90 });
                     return ms.ToArray();
                 }
             }
