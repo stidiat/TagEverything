@@ -30,10 +30,24 @@ namespace TagEverything.UI.Views
         public ObservableCollection<ComparisonItem> ExistingMetadata { get; set; } = new ObservableCollection<ComparisonItem>();
         public ObservableCollection<ComparisonItem> NewMetadata { get; set; } = new ObservableCollection<ComparisonItem>();
 
-        public DuplicateComparisonWindow(FileRecord existingFile, FileImportContext newFile)
+        public string MatchTypeText { get; set; } = "疑似重复文件";
+        public Brush MatchTypeBrush { get; set; } = Brushes.Red;
+
+        public DuplicateComparisonWindow(FileRecord existingFile, FileImportContext newFile, bool isExactMatch = true)
         {
             InitializeComponent();
             DataContext = this;
+
+            if (isExactMatch)
+            {
+                MatchTypeText = "检测到完全重复 (Hash或大小相同)";
+                MatchTypeBrush = Brushes.Red;
+            }
+            else
+            {
+                MatchTypeText = "检测到高度相似 (内容或画面相近)";
+                MatchTypeBrush = Brushes.Orange;
+            }
 
             ExistingFileName = existingFile.OriginalName;
             NewFileName = Path.GetFileName(newFile.FilePath);

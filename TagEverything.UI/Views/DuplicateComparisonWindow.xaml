@@ -15,8 +15,14 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0" Text="发现库中存在相似文件，请确认是否继续导入：" 
-                   Style="{StaticResource MaterialDesignHeadline6TextBlock}" Margin="0,0,0,16"/>
+        <StackPanel Grid.Row="0" Margin="0,0,0,16">
+            <TextBlock Text="{Binding MatchTypeText}" 
+                       Foreground="{Binding MatchTypeBrush}"
+                       FontWeight="Bold"
+                       Style="{StaticResource MaterialDesignHeadline5TextBlock}" Margin="0,0,0,8"/>
+            <TextBlock Text="请核对以下文件信息，确认是否继续导入：" 
+                       Style="{StaticResource MaterialDesignSubtitle1TextBlock}"/>
+        </StackPanel>
 
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
             <Grid>

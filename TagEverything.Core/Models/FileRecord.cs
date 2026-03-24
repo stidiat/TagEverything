@@ -13,6 +13,7 @@ namespace TagEverything.Core.Models
         public string RelativePath { get; set; } = string.Empty;
         public long Size { get; set; }
         public string Hash { get; set; } = string.Empty;
+        public ulong PHash { get; set; }
         public bool IsVideo { get; set; }
         public DateTime AddedAt { get; set; } = DateTime.UtcNow;
         public DateTime FileCreationTime { get; set; }

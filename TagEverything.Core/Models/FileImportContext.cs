@@ -6,6 +6,7 @@ namespace TagEverything.Core.Models
     {
         public string FilePath { get; set; } = string.Empty;
         public string FileHash { get; set; } = string.Empty;
+        public ulong PHash { get; set; }
         public byte[]? Thumbnail { get; set; }
         public bool IsVideo { get; set; }
         public string MetadataJson { get; set; } = string.Empty;

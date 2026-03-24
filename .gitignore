@@ -492,4 +492,8 @@ settings.json
 *.db-wal
 *.db-journal
 TagEverythingData/
+ffmpeg.exe
+ffprobe.exe
+ffmpeg.zip
+ffmpeg_temp/
 

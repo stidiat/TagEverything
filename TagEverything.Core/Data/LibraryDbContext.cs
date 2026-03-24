@@ -42,6 +42,9 @@ namespace TagEverything.Core.Data
         {
             modelBuilder.Entity<FileRecord>()
                 .HasIndex(f => f.Hash);
+
+            modelBuilder.Entity<FileRecord>()
+                .HasIndex(f => f.PHash);
                 
             modelBuilder.Entity<Tag>()
                 .HasIndex(t => t.Name)

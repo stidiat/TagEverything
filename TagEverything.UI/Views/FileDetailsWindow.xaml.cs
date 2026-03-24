@@ -151,6 +151,7 @@ namespace TagEverything.UI.Views
                     RelativePath = relativePath,
                     Size = ImportContext.Size,
                     Hash = ImportContext.FileHash,
+                    PHash = ImportContext.PHash,
                     IsVideo = ImportContext.IsVideo,
                     MetadataJson = ImportContext.MetadataJson,
                     Thumbnail = ImportContext.Thumbnail,

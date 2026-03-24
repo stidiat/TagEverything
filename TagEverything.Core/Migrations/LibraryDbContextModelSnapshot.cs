@@ -62,6 +62,9 @@ namespace TagEverything.Core.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<ulong>("PHash")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("RelativePath")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -79,6 +82,8 @@ namespace TagEverything.Core.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("Hash");
+
+                    b.HasIndex("PHash");
 
                     b.ToTable("Files");
                 });

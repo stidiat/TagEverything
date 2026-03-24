@@ -275,12 +275,13 @@ namespace TagEverything.UI
             {
                 var fileHash = await hashService.CalculateSha256Async(filePath);
                 var metadataJson = await metaService.ExtractMetadataAsync(filePath, isVideo);
-                var thumbnail = await metaService.ExtractThumbnailAsync(filePath, fileInfo.Extension);
+                var (thumbnail, pHash) = await metaService.ExtractThumbnailAndPHashAsync(filePath, fileInfo.Extension);
 
                 var importContext = new FileImportContext
                 {
                     FilePath = filePath,
                     FileHash = fileHash,
+                    PHash = pHash,
                     Thumbnail = thumbnail,
                     IsVideo = isVideo,
                     MetadataJson = metadataJson,
@@ -293,11 +294,38 @@ namespace TagEverything.UI
                 var dbContext = Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<TagEverything.Core.Data.LibraryDbContext>(scope.ServiceProvider);
                 
                 // Find duplicate
-                var similarFile = dbContext.Files.FirstOrDefault(f => f.Hash == fileHash || (f.Size == importContext.Size && f.Size > 0));
+                var exactDuplicate = dbContext.Files.FirstOrDefault(f => f.Hash == fileHash || (f.Size == importContext.Size && f.Size > 0));
+
+                FileRecord? similarFile = exactDuplicate;
+                bool isExact = exactDuplicate != null;
+
+                if (!isExact && pHash != 0)
+                {
+                    // Check PHash similarity
+                    var allHashes = dbContext.Files.Select(f => new { f.Id, f.PHash }).ToList();
+                    int? bestMatchId = null;
+                    int minDistance = int.MaxValue;
+
+                    foreach (var h in allHashes)
+                    {
+                        if (h.PHash == 0) continue;
+                        int distance = System.Numerics.BitOperations.PopCount(h.PHash ^ pHash);
+                        if (distance <= 10 && distance < minDistance) // 10 bits difference threshold for highly similar
+                        {
+                            minDistance = distance;
+                            bestMatchId = h.Id;
+                        }
+                    }
+
+                    if (bestMatchId.HasValue)
+                    {
+                        similarFile = dbContext.Files.FirstOrDefault(f => f.Id == bestMatchId.Value);
+                    }
+                }
 
                 if (similarFile != null)
                 {
-                    var duplicateWindow = new DuplicateComparisonWindow(similarFile, importContext)
+                    var duplicateWindow = new DuplicateComparisonWindow(similarFile, importContext, isExact)
                     {
                         Owner = this
                     };
