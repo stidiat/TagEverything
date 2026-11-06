@@ -44,42 +44,41 @@ namespace TagEverything.UI.Views
             };
 
             if (dialog.ShowDialog() == true && dialog.SelectedPath != App.Settings.Current.LibraryPath)
+                await SwitchLibraryAsync(dialog.SelectedPath);
+        }
+
+        private async Task SwitchLibraryAsync(string destination)
+        {
+            _switching = true;
+            ChangePathButton.IsEnabled = false;
+            try
             {
-                _switching = true;
-                ChangePathButton.IsEnabled = false;
                 var previousPath = App.Settings.Current.LibraryPath;
                 var fileService = App.ServiceProvider.GetRequiredService<FileManagementService>();
                 var monitorService = App.ServiceProvider.GetRequiredService<LibraryMonitorService>();
-
-                try
-                {
-                    var recovery = await App.ServiceProvider.GetRequiredService<LibrarySwitchService>()
-                        .SwitchAsync(previousPath, dialog.SelectedPath, path =>
-                        {
-                            LibraryPath = path;
-                            App.Settings.Save();
-                            fileService.UpdateLibraryRoot(path);
-                            monitorService.UpdatePath(path);
-                        });
-                    if (recovery.Count > 0) MessageBox.Show(string.Join("\n", recovery), "库恢复报告");
-                    PathChanged = true;
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show(
-                        $"无法切换库目录：{ex.Message}",
-                        "切换失败",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Error);
-                }
+                var recovery = await App.ServiceProvider.GetRequiredService<LibrarySwitchService>()
+                    .SwitchAsync(previousPath, destination, path =>
+                    {
+                        LibraryPath = path;
+                        App.Settings.Save();
+                        fileService.UpdateLibraryRoot(path);
+                        monitorService.UpdatePath(path);
+                    });
+                PathChanged = true;
+                if (recovery.Count > 0) MessageBox.Show(this, string.Join("\n", recovery), "库恢复报告");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, $"无法切换库目录：{ex.Message}", "切换失败", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                _switching = false;
+                ChangePathButton.IsEnabled = true;
             }
         }
 
-        private void Close_Click(object sender, RoutedEventArgs e)
-        {
-            App.Settings.Save();
-            Close();
-        }
+        private void Close_Click(object sender, RoutedEventArgs e) => Close();
 
         protected override void OnClosing(CancelEventArgs e)
         {
@@ -87,7 +86,7 @@ namespace TagEverything.UI.Views
             else
             {
                 try { App.Settings.Save(); }
-                catch (Exception ex) { e.Cancel = true; MessageBox.Show($"保存设置失败：{ex.Message}"); }
+                catch (Exception ex) { e.Cancel = true; MessageBox.Show(this, $"保存设置失败：{ex.Message}"); }
             }
             base.OnClosing(e);
         }

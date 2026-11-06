@@ -58,7 +58,7 @@ TagEverything 是一个基于 Windows 桌面（WPF + .NET 9）开发的文件管
   - 安全文件暂存、唯一文件名与路径越界防护
   - SQLite 感知哈希完整范围及标签大小写唯一性
 
-使用变化与本地验证步骤见 [V1.2 发布说明](docs/RELEASE_NOTES.md)。
+使用变化与本地验证步骤见 [发布说明](docs/RELEASE_NOTES.md)。
 
 ## 技术栈与交付物
 - **目标框架**: .NET 9.0-windows

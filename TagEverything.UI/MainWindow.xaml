@@ -7,7 +7,7 @@
         xmlns:converters="clr-namespace:TagEverything.UI.Converters"
         xmlns:controls="clr-namespace:TagEverything.UI.Controls"
         mc:Ignorable="d"
-        Title="TagEverything · 文件库" Height="820" Width="1280" MinWidth="1080" MinHeight="600" WindowStartupLocation="CenterScreen" Style="{StaticResource WorkspaceWindow}"
+        Title="TagEverything · 文件库" Icon="/TagEverything;component/Assets/TagEverything.ico" Height="820" Width="1280" MinWidth="1080" MinHeight="600" WindowStartupLocation="CenterScreen" Style="{StaticResource WorkspaceWindow}"
         AllowDrop="True" Drop="Window_Drop"
         PreviewMouseDown="Window_PreviewMouseDown">
     <Window.Resources>
@@ -132,9 +132,7 @@
             <Grid>
                 <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                 <StackPanel>
-                    <Border Background="{StaticResource AccentBrush}" CornerRadius="12" Width="42" Height="42" HorizontalAlignment="Left">
-                        <materialDesign:PackIcon Kind="TagMultiple" Foreground="White" Width="24" Height="24" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                    </Border>
+                    <Image Source="/TagEverything;component/Assets/TagEverything.png" Width="42" Height="42" HorizontalAlignment="Left"/>
                     <TextBlock Text="TagEverything" FontSize="19" FontWeight="Bold" Margin="0,14,0,4"/>
                     <TextBlock Text="整理 · 标记 · 发现" FontSize="12" Foreground="{StaticResource MutedBrush}"/>
                 </StackPanel>

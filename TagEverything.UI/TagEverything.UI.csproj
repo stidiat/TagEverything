@@ -23,9 +23,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <AssemblyName>TagEverything</AssemblyName>
+    <ApplicationIcon>Assets\TagEverything.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
+    <Resource Include="Assets\TagEverything.ico" />
+    <Resource Include="Assets\TagEverything.png" />
     <None Update="ffmpeg.exe">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

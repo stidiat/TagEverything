@@ -101,9 +101,32 @@ internal static class Program
             ((Button)details.FindName("ConfirmButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             PumpUntil(() => details.Confirmed);
             using (var db = new LibraryDbContext(root)) Require(db.Files.Count() == 206, "Import dialog commits through operation service");
+
+            var newLibrary = Path.Combine(root, "switched-library");
+            var settingsWindow = new SettingsWindow { Owner = main };
+            var settingsClosed = false;
+            settingsWindow.Closed += (_, _) => settingsClosed = true;
+            settingsWindow.Show();
+            // Use the same switch routine as the folder picker without opening the native dialog.
+            var switchLibrary = typeof(SettingsWindow).GetMethod("SwitchLibraryAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            Task switching;
+            using (LibraryWriteLock.AcquireAsync(newLibrary).GetAwaiter().GetResult())
+            {
+                switching = (Task)switchLibrary.Invoke(settingsWindow, [newLibrary])!;
+                settingsWindow.Close();
+                Require(!settingsClosed, "Settings stay open while the library switch is pending");
+            }
+            PumpUntil(() => switching.IsCompleted);
+            switching.GetAwaiter().GetResult();
+            Require(settingsWindow.PathChanged && settings.Current.LibraryPath == newLibrary, "Settings switch to the selected library");
+            Require(((Button)settingsWindow.FindName("ChangePathButton")).IsEnabled, "Settings allow another path change");
+            Descendants<Button>(settingsWindow).Single(button => Equals(button.Content, "关闭"))
+                .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Require(settingsClosed, "Settings close after switching the library path");
+
             main.Close();
             provider.GetRequiredService<LibraryMonitorService>().StopAsync().GetAwaiter().GetResult();
-            Console.WriteLine($"PASS WPF smoke: virtualization ({realized}/100), scrolling, list extensions, paging, search/clear, corrupt-thumbnail fallback, import, shutdown.");
+            Console.WriteLine($"PASS WPF smoke: virtualization ({realized}/100), scrolling, list extensions, paging, search/clear, corrupt-thumbnail fallback, import, settings switch and close, shutdown.");
             return 0;
         }
         catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
