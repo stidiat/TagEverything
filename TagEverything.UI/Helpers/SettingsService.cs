@@ -7,36 +7,72 @@ namespace TagEverything.UI.Helpers
     public class AppSettings
     {
         public string LibraryPath { get; set; } = string.Empty;
+        public int SimilarityThreshold { get; set; } = 10;
     }
 
     public class SettingsService
     {
         private readonly string _settingsFile;
-        public AppSettings Current { get; private set; }
+        private readonly string _legacySettingsFile;
+        public AppSettings Current { get; private set; } = new();
 
-        public SettingsService()
+        public SettingsService(string? settingsDirectory = null)
         {
-            _settingsFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "settings.json");
+            var useLegacy = settingsDirectory == null;
+            settingsDirectory ??= Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "TagEverything");
+
+            _settingsFile = Path.Combine(settingsDirectory, "settings.json");
+            _legacySettingsFile = Path.Combine(useLegacy ? AppDomain.CurrentDomain.BaseDirectory : settingsDirectory, "legacy.settings.json");
             Load();
         }
 
         public void Load()
         {
-            if (File.Exists(_settingsFile))
+            Current = TryLoad(_settingsFile)
+                ?? TryLoad(_legacySettingsFile)
+                ?? new AppSettings();
+
+            // Migrate a valid legacy configuration out of the installation folder.
+            if (!File.Exists(_settingsFile) && !string.IsNullOrWhiteSpace(Current.LibraryPath))
             {
-                var json = File.ReadAllText(_settingsFile);
-                Current = JsonConvert.DeserializeObject<AppSettings>(json) ?? new AppSettings();
-            }
-            else
-            {
-                Current = new AppSettings();
+                Save();
             }
         }
 
         public void Save()
         {
+            var directory = Path.GetDirectoryName(_settingsFile)!;
+            Directory.CreateDirectory(directory);
+
             var json = JsonConvert.SerializeObject(Current, Formatting.Indented);
-            File.WriteAllText(_settingsFile, json);
+            var temporaryFile = _settingsFile + ".tmp";
+            File.WriteAllText(temporaryFile, json);
+            File.Move(temporaryFile, _settingsFile, true);
+        }
+
+        private static AppSettings? TryLoad(string path)
+        {
+            if (!File.Exists(path)) return null;
+
+            try
+            {
+                var json = File.ReadAllText(path);
+                return JsonConvert.DeserializeObject<AppSettings>(json);
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
+            catch (IOException)
+            {
+                return null;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return null;
+            }
         }
     }
 }

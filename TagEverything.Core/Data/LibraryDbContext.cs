@@ -1,6 +1,8 @@
 using System.IO;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using TagEverything.Core.Models;
+using TagEverything.Core.Services;
 
 namespace TagEverything.Core.Data
 {
@@ -24,18 +26,28 @@ namespace TagEverything.Core.Data
         {
             if (!optionsBuilder.IsConfigured && _libraryPath != null)
             {
-                var dataDir = Path.Combine(_libraryPath, "TagEverythingData");
-                if (!Directory.Exists(dataDir)) Directory.CreateDirectory(dataDir);
-                
-                var oldDbPath = Path.Combine(_libraryPath, "library.db");
-                var currentDbPath = Path.Combine(dataDir, "library.db");
-                if (File.Exists(oldDbPath) && !File.Exists(currentDbPath))
-                {
-                    File.Move(oldDbPath, currentDbPath);
-                }
-                
-                optionsBuilder.UseSqlite($"Data Source={currentDbPath}");
+                optionsBuilder.UseSqlite(CreateConnectionString(_libraryPath));
             }
+        }
+
+        public static string CreateConnectionString(string libraryPath)
+        {
+            var dataDir = LibraryPaths.Resolve(libraryPath, LibraryPaths.DataDirectory);
+            Directory.CreateDirectory(dataDir);
+
+            var currentDbPath = LibraryPaths.Resolve(libraryPath, Path.Combine(LibraryPaths.DataDirectory, "library.db"));
+            foreach (var suffix in new[] { "-journal", "-wal", "-shm" })
+                LibraryPaths.Internal(libraryPath, "library.db" + suffix);
+            if (!File.Exists(currentDbPath))
+            {
+                var oldDbPath = LibraryPaths.Resolve(libraryPath, "library.db");
+                if (File.Exists(oldDbPath)) File.Move(oldDbPath, currentDbPath);
+            }
+
+            return new SqliteConnectionStringBuilder
+            {
+                DataSource = currentDbPath
+            }.ToString();
         }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)

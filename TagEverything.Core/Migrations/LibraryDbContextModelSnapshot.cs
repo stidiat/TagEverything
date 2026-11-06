@@ -44,12 +44,18 @@ namespace TagEverything.Core.Migrations
                     b.Property<DateTime>("FileCreationTime")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("FileIdentity")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("FileModificationTime")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Hash")
                         .IsRequired()
                         .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsMissing")
+                        .HasColumnType("INTEGER");
 
                     b.Property<bool>("IsVideo")
                         .HasColumnType("INTEGER");

@@ -3,14 +3,14 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
         xmlns:converters="clr-namespace:TagEverything.UI.Converters"
-        Title="编辑标签" Height="450" Width="400"
-        WindowStartupLocation="CenterOwner"
+        Title="编辑标签" Height="520" Width="520" MinHeight="450" MinWidth="460"
+        WindowStartupLocation="CenterOwner" Style="{StaticResource WorkspaceWindow}"
         Loaded="Window_Loaded">
     <Window.Resources>
         <converters:TagColorConverter x:Key="TagColorConverter" />
         <converters:InverseBooleanToVisibilityConverter x:Key="InverseBooleanToVisibilityConverter" />
     </Window.Resources>
-    <Grid Margin="16">
+    <Grid Margin="28">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -18,13 +18,13 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <TextBlock Text="{Binding FilePath}" TextWrapping="Wrap" FontWeight="Bold" Margin="0,0,0,16" Grid.Row="0"/>
+        <TextBlock Text="{Binding FilePath}" TextWrapping="Wrap" FontWeight="SemiBold" FontSize="16" Margin="0,0,0,24" Grid.Row="0"/>
 
         <StackPanel Grid.Row="1" Margin="0,0,0,16">
             <TextBlock Text="添加新标签 (空格或逗号分隔):" FontWeight="SemiBold"/>
             <TextBox x:Name="TagInputBox" KeyDown="TagInputBox_KeyDown" TextChanged="TagInputBox_TextChanged"
                      materialDesign:HintAssist.Hint="输入要添加的标签..."/>
-            
+
             <ItemsControl x:Name="TagsToAddList" Margin="0,8,0,0" ItemsSource="{Binding TagsToAdd}">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
@@ -33,12 +33,12 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Border Background="{Binding Converter={StaticResource TagColorConverter}}" 
-                                BorderBrush="{Binding Converter={StaticResource TagColorConverter}}" BorderThickness="1" 
+                        <Border Background="{Binding Converter={StaticResource TagColorConverter}}"
+                                BorderBrush="{Binding Converter={StaticResource TagColorConverter}}" BorderThickness="1"
                                 CornerRadius="12" Margin="0,0,4,4" Padding="8,4">
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Text="{Binding}" Foreground="White" VerticalAlignment="Center"/>
-                                <Button CommandParameter="{Binding}" Click="RemoveNewTag_Click" Style="{StaticResource MaterialDesignToolButton}" 
+                                <Button CommandParameter="{Binding}" Click="RemoveNewTag_Click" Style="{StaticResource MaterialDesignToolButton}"
                                         Width="16" Height="16" Padding="0" Margin="4,0,0,0">
                                     <materialDesign:PackIcon Kind="Close" Width="12" Height="12" Foreground="White"/>
                                 </Button>
@@ -51,11 +51,11 @@
 
         <StackPanel Grid.Row="2">
             <TextBlock Text="现有标签 (点击删除):" FontWeight="SemiBold" Margin="0,0,0,8"/>
-            <TextBlock Text="该文件当前没有标签" FontStyle="Italic" Foreground="Gray" 
+            <TextBlock Text="该文件当前没有标签" FontStyle="Italic" Foreground="Gray"
                        Visibility="{Binding HasExistingTags, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
-            
+
             <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <ItemsControl x:Name="ExistingTagsList" ItemsSource="{Binding ExistingTags}">
+                <ItemsControl ItemsSource="{Binding ExistingTags}">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
                             <WrapPanel />
@@ -63,14 +63,14 @@
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Border Background="{Binding Name, Converter={StaticResource TagColorConverter}}" 
-                                    BorderBrush="{Binding Name, Converter={StaticResource TagColorConverter}}" BorderThickness="1" 
+                            <Border Background="{Binding Name, Converter={StaticResource TagColorConverter}}"
+                                    BorderBrush="{Binding Name, Converter={StaticResource TagColorConverter}}" BorderThickness="1"
                                     CornerRadius="12" Margin="0,0,4,4" Padding="8,4"
                                     Opacity="{Binding Opacity}">
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="{Binding Name}" Foreground="White" VerticalAlignment="Center"
                                                TextDecorations="{Binding TextDecoration}"/>
-                                    <Button CommandParameter="{Binding}" Click="ToggleExistingTagRemoval_Click" Style="{StaticResource MaterialDesignToolButton}" 
+                                    <Button CommandParameter="{Binding}" Click="ToggleExistingTagRemoval_Click" Style="{StaticResource MaterialDesignToolButton}"
                                             Width="16" Height="16" Padding="0" Margin="4,0,0,0">
                                         <materialDesign:PackIcon Kind="{Binding IconKind}" Width="12" Height="12" Foreground="White"/>
                                     </Button>
@@ -83,8 +83,8 @@
         </StackPanel>
 
         <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
-            <Button Content="取消" Style="{StaticResource MaterialDesignOutlinedButton}" Margin="0,0,8,0" Click="Cancel_Click"/>
-            <Button Content="保存修改" x:Name="SaveButton" Click="Save_Click"/>
+            <Button Content="取消" Style="{StaticResource QuietButton}" Margin="0,0,8,0" Click="Cancel_Click"/>
+            <Button Style="{StaticResource PrimaryButton}" Content="保存修改" x:Name="SaveButton" Click="Save_Click"/>
         </StackPanel>
     </Grid>
 </Window>

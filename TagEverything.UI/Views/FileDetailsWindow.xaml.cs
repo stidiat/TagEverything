@@ -2,14 +2,12 @@ using System;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
-using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using TagEverything.Core.Data;
 using TagEverything.Core.Models;
 using TagEverything.Core.Services;
 
@@ -19,12 +17,19 @@ namespace TagEverything.UI.Views
     {
         public FileImportContext ImportContext { get; private set; }
         public bool Confirmed { get; private set; } = false;
+        public Exception? ImportError { get; private set; }
+        private CancellationTokenSource? _saveCts;
+        private bool _saving;
+        private readonly string _libraryRoot;
+        private readonly CancellationToken _batchToken;
 
         public ObservableCollection<string> Tags { get; set; } = new ObservableCollection<string>();
 
-        public FileDetailsWindow(FileImportContext context)
+        public FileDetailsWindow(FileImportContext context, string? libraryRoot = null, CancellationToken batchToken = default)
         {
             ImportContext = context;
+            _libraryRoot = libraryRoot ?? App.Settings.Current.LibraryPath;
+            _batchToken = batchToken;
             InitializeComponent();
             DataContext = this;
             TagsList.ItemsSource = Tags;
@@ -45,6 +50,7 @@ namespace TagEverything.UI.Views
                     var dict = JsonConvert.DeserializeObject<JObject>(ImportContext.MetadataJson);
                     if (dict != null)
                     {
+                        if (dict["Error"] != null) AddMetadataItem("媒体提示", dict["Error"]?.ToString() ?? "");
                         if (dict["Duration"] != null) AddMetadataItem("时长 (秒)", dict["Duration"]?.ToString() ?? "");
                         if (dict["Resolution"] != null) AddMetadataItem("分辨率", dict["Resolution"]?.ToString() ?? "");
                         if (dict["Bitrate"] != null) AddMetadataItem("码率", dict["Bitrate"]?.ToString() ?? "");
@@ -92,7 +98,7 @@ namespace TagEverything.UI.Views
         {
             if (e.Key == Key.Enter)
             {
-                // Just prevent default beep or whatever, don't process tag
+                ProcessTagInput();
                 e.Handled = true;
             }
         }
@@ -132,59 +138,48 @@ namespace TagEverything.UI.Views
 
         private async void Confirm_Click(object sender, RoutedEventArgs e)
         {
-            ProcessTagInput(); // Ensure any remaining text is added as a tag
-
+            ProcessTagInput();
             ConfirmButton.IsEnabled = false;
-
+            _saving = true;
+            ImportError = null;
+            _saveCts = CancellationTokenSource.CreateLinkedTokenSource(_batchToken);
             try
             {
-                var fileService = App.ServiceProvider.GetRequiredService<FileManagementService>();
-                var (savedName, relativePath) = await fileService.ImportFileAsync(ImportContext.FilePath, false);
-
-                using var scope = App.ServiceProvider.CreateScope();
-                var dbContext = scope.ServiceProvider.GetRequiredService<LibraryDbContext>();
-
-                var fileRecord = new FileRecord
+                var progress = new Progress<OperationProgress>(p =>
                 {
-                    OriginalName = Path.GetFileName(ImportContext.FilePath),
-                    SavedName = savedName,
-                    RelativePath = relativePath,
-                    Size = ImportContext.Size,
-                    Hash = ImportContext.FileHash,
-                    PHash = ImportContext.PHash,
-                    IsVideo = ImportContext.IsVideo,
-                    MetadataJson = ImportContext.MetadataJson,
-                    Thumbnail = ImportContext.Thumbnail,
-                    FileCreationTime = ImportContext.CreationTime.ToUniversalTime(),
-                    FileModificationTime = ImportContext.LastWriteTime.ToUniversalTime()
-                };
-
-                foreach (var tagName in Tags)
-                {
-                    var tag = dbContext.Tags.FirstOrDefault(t => t.Name == tagName);
-                    if (tag == null)
-                    {
-                        tag = new Tag { Name = tagName };
-                        dbContext.Tags.Add(tag);
-                    }
-                    fileRecord.Tags.Add(tag);
-                }
-
-                dbContext.Files.Add(fileRecord);
-                await dbContext.SaveChangesAsync();
-
+                    SaveProgress.Value = p.Percent;
+                    SaveStatus.Text = $"{p.Stage} {p.Percent:0}%";
+                });
+                await App.ServiceProvider.GetRequiredService<LibraryOperationsService>()
+                    .ImportAsync(_libraryRoot, ImportContext, Tags.ToList(), progress, _saveCts.Token);
                 Confirmed = true;
+                _saving = false;
                 Close();
             }
+            catch (OperationCanceledException) { SaveStatus.Text = "已取消本次导入，可重新确认或关闭。"; }
             catch (Exception ex)
             {
-                MessageBox.Show($"导入失败: {ex.Message}");
+                ImportError = ex;
+                SaveStatus.Text = "导入失败，可重试。";
+                MessageBox.Show($"导入失败：{ex.Message}");
+            }
+            finally
+            {
+                _saving = false;
+                _saveCts.Dispose();
+                _saveCts = null;
                 ConfirmButton.IsEnabled = true;
             }
         }
 
+        protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+        {
+            if (_saving) { _saveCts?.Cancel(); e.Cancel = true; }
+            base.OnClosing(e);
+        }
         private void Cancel_Click(object sender, RoutedEventArgs e)
         {
+            if (_saving) { _saveCts?.Cancel(); return; }
             Close();
         }
     }

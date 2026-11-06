@@ -48,7 +48,7 @@ namespace TagEverything.UI.Views
         {
             if (e.Key == Key.Enter)
             {
-                // Just prevent default beep or whatever, don't process tag
+                ProcessTagInput();
                 e.Handled = true;
             }
         }
@@ -108,29 +108,9 @@ namespace TagEverything.UI.Views
                 var record = await dbContext.Files.Include(f => f.Tags).FirstOrDefaultAsync(f => f.Id == _fileRecord.Id);
                 if (record != null)
                 {
-                    // Remove existing tags marked for removal
-                    var tagsToRemove = ExistingTags.Where(t => t.IsMarkedForRemoval).Select(t => t.Name).ToList();
-                    var toRemove = record.Tags.Where(t => tagsToRemove.Contains(t.Name)).ToList();
-                    foreach (var tag in toRemove)
-                    {
-                        record.Tags.Remove(tag);
-                    }
-
-                    // Add new tags
-                    foreach (var tagToAdd in TagsToAdd)
-                    {
-                        if (!record.Tags.Any(t => string.Equals(t.Name, tagToAdd, StringComparison.OrdinalIgnoreCase)))
-                        {
-                            var existingTag = await dbContext.Tags.FirstOrDefaultAsync(t => t.Name == tagToAdd);
-                            if (existingTag == null)
-                            {
-                                existingTag = new Tag { Name = tagToAdd };
-                                dbContext.Tags.Add(existingTag);
-                            }
-                            record.Tags.Add(existingTag);
-                        }
-                    }
-
+                    using var lease = await TagEverything.Core.Services.LibraryWriteLock.AcquireAsync(App.Settings.Current.LibraryPath);
+                    await App.ServiceProvider.GetRequiredService<TagEverything.Core.Services.TagService>()
+                        .ApplyAsync(dbContext, new[] { record }, TagsToAdd, ExistingTags.Where(t => t.IsMarkedForRemoval).Select(t => t.Name));
                     await dbContext.SaveChangesAsync();
                 }
 

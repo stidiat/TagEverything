@@ -1,9 +1,10 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿using System;
+﻿﻿﻿﻿﻿﻿﻿﻿﻿using System;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Newtonsoft.Json;
 using Ookii.Dialogs.Wpf;
 using TagEverything.Core.Data;
 using TagEverything.Core.Services;
@@ -36,8 +37,12 @@ namespace TagEverything.UI
             return null;
         }
 
-        private void OnStartup(object sender, StartupEventArgs e)
+        private async void OnStartup(object sender, StartupEventArgs e)
         {
+            var nativeDirectory = Path.Combine(AppContext.BaseDirectory, "bin");
+            if (File.Exists(Path.Combine(nativeDirectory, "Magick.Native-Q8-x64.dll")))
+                ImageMagick.MagickNET.SetNativeLibraryDirectory(nativeDirectory);
+
             // Pre-load SQLite library from bin folder if it exists
             string sqlitePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "bin", "e_sqlite3.dll");
             if (File.Exists(sqlitePath))
@@ -46,6 +51,13 @@ namespace TagEverything.UI
             }
 
             Settings = new SettingsService();
+
+            var libraryPathFromArguments = ResolveLibraryPathFromArguments(e.Args);
+            if (!string.IsNullOrWhiteSpace(libraryPathFromArguments))
+            {
+                Settings.Current.LibraryPath = libraryPathFromArguments;
+                Settings.Save();
+            }
 
             if (string.IsNullOrEmpty(Settings.Current.LibraryPath))
             {
@@ -72,11 +84,21 @@ namespace TagEverything.UI
             ConfigureServices(serviceCollection);
             ServiceProvider = serviceCollection.BuildServiceProvider();
 
-            // Run Migrations
-            using (var scope = ServiceProvider.CreateScope())
+            try
             {
-                var dbContext = scope.ServiceProvider.GetRequiredService<LibraryDbContext>();
-                dbContext.Database.Migrate();
+                var recovery = await ServiceProvider.GetRequiredService<LibrarySwitchService>()
+                    .InitializeAsync(Settings.Current.LibraryPath);
+                if (recovery.Count > 0) MessageBox.Show(string.Join("\n", recovery), "库恢复报告");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"无法初始化库数据库：{ex.Message}",
+                    "启动失败",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                Shutdown();
+                return;
             }
 
             var mainWindow = ServiceProvider.GetRequiredService<MainWindow>();
@@ -89,27 +111,95 @@ namespace TagEverything.UI
             
             services.AddDbContext<LibraryDbContext>((sp, options) => {
                 var settings = sp.GetRequiredService<SettingsService>();
-                var libraryPath = settings.Current.LibraryPath;
-                var dataDir = Path.Combine(libraryPath, "TagEverythingData");
-                if (!Directory.Exists(dataDir)) Directory.CreateDirectory(dataDir);
-                
-                var oldDbPath = Path.Combine(libraryPath, "library.db");
-                var currentDbPath = Path.Combine(dataDir, "library.db");
-                if (File.Exists(oldDbPath) && !File.Exists(currentDbPath))
-                {
-                    File.Move(oldDbPath, currentDbPath);
-                }
-                
-                options.UseSqlite($"Data Source={currentDbPath}");
+                options.UseSqlite(LibraryDbContext.CreateConnectionString(
+                    settings.Current.LibraryPath));
             }, ServiceLifetime.Transient);
 
+            services.AddSingleton<LibraryOperationsService>();
+            services.AddSingleton<LibrarySwitchService>();
+            services.AddSingleton<TagService>();
+            services.AddSingleton<ImportAnalysisService>();
+            services.AddSingleton<ImportQueueService>();
+            services.AddSingleton<SimilarityFeedbackService>();
+            services.AddSingleton<ThumbnailStoreService>();
             services.AddSingleton<HashService>();
+            services.AddSingleton<ShellPreviewService>();
             services.AddSingleton<MetadataExtractionService>();
+            services.AddSingleton<DuplicateDetectionService>();
             services.AddSingleton(sp => new FileManagementService(sp.GetRequiredService<SettingsService>().Current.LibraryPath));
-            services.AddSingleton(sp => new LibraryMonitorService(sp.GetRequiredService<SettingsService>().Current.LibraryPath, sp));
+            services.AddSingleton(sp => new LibraryMonitorService(sp.GetRequiredService<SettingsService>().Current.LibraryPath, sp.GetRequiredService<ImportAnalysisService>()));
 
             services.AddTransient<MainViewModel>();
             services.AddTransient<MainWindow>();
+        }
+
+        private static string? ResolveLibraryPathFromArguments(string[] args)
+        {
+            var argument = args.FirstOrDefault(a =>
+                Directory.Exists(a) ||
+                string.Equals(Path.GetExtension(a), ".library", StringComparison.OrdinalIgnoreCase));
+
+            if (string.IsNullOrWhiteSpace(argument)) return null;
+
+            if (Directory.Exists(argument))
+            {
+                return Path.GetFullPath(argument);
+            }
+
+            if (!File.Exists(argument)) return null;
+
+            var markerDirectory = Path.GetDirectoryName(Path.GetFullPath(argument));
+
+            try
+            {
+                var content = File.ReadAllText(argument).Trim();
+                if (!string.IsNullOrWhiteSpace(content))
+                {
+                    string? configuredPath = null;
+                    try
+                    {
+                        configuredPath = JsonConvert.DeserializeObject<AppSettings>(content)?.LibraryPath;
+                    }
+                    catch (JsonException)
+                    {
+                        configuredPath = content;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(configuredPath))
+                    {
+                        if (!Path.IsPathRooted(configuredPath) && markerDirectory != null)
+                        {
+                            configuredPath = Path.Combine(markerDirectory, configuredPath);
+                        }
+
+                        if (Directory.Exists(configuredPath))
+                        {
+                            return Path.GetFullPath(configuredPath);
+                        }
+                    }
+                }
+            }
+            catch (IOException)
+            {
+                // An empty/unreadable marker still identifies its containing folder.
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // Fall back to the marker's containing folder.
+            }
+
+            return markerDirectory;
+        }
+
+        protected override void OnExit(ExitEventArgs e)
+        {
+            if (ServiceProvider is IDisposable disposableProvider)
+            {
+                disposableProvider.Dispose();
+            }
+
+            AppDomain.CurrentDomain.AssemblyResolve -= CurrentDomain_AssemblyResolve;
+            base.OnExit(e);
         }
     }
 }

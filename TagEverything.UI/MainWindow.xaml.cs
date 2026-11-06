@@ -7,8 +7,9 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Shapes;
 using Microsoft.Win32;
+using Microsoft.Extensions.DependencyInjection;
+using TagEverything.Core.Services;
 using TagEverything.Core.Models;
 using TagEverything.UI.ViewModels;
 using TagEverything.UI.Views;
@@ -18,20 +19,36 @@ namespace TagEverything.UI
     public partial class MainWindow : Window
     {
         private readonly MainViewModel _viewModel;
+        private readonly DuplicateDetectionService _duplicateDetectionService;
 
+        private CancellationTokenSource? _importCts;
+        private readonly Queue<(List<string> Paths, bool Register)> _pendingImports = new();
+        private readonly List<ImportQueueFailure> _failedImports = new();
+        private bool _closed;
         private bool _isDragging = false;
         private Point _startPoint;
 
-        public MainWindow(MainViewModel viewModel)
+        public MainWindow(
+            MainViewModel viewModel,
+            DuplicateDetectionService duplicateDetectionService)
         {
             InitializeComponent();
             _viewModel = viewModel;
+            _duplicateDetectionService = duplicateDetectionService;
             DataContext = _viewModel;
 
             this.DragEnter += (s, e) => {
                 if (e.Data.GetDataPresent(DataFormats.FileDrop)) DropOverlay.Visibility = Visibility.Visible;
             };
             this.DragLeave += (s, e) => DropOverlay.Visibility = Visibility.Collapsed;
+        }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            _closed = true;
+            _importCts?.Cancel();
+            _viewModel.Dispose();
+            base.OnClosed(e);
         }
 
         private void ListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -58,10 +75,7 @@ namespace TagEverything.UI
             if (e.Data.GetDataPresent(DataFormats.FileDrop))
             {
                 var files = (string[])e.Data.GetData(DataFormats.FileDrop);
-                foreach (var file in files)
-                {
-                    await HandleFileImportAsync(file);
-                }
+                await RunImportsAsync(files, false);
             }
         }
 
@@ -75,10 +89,7 @@ namespace TagEverything.UI
 
             if (dialog.ShowDialog() == true)
             {
-                foreach (var file in dialog.FileNames)
-                {
-                    await HandleFileImportAsync(file);
-                }
+                await RunImportsAsync(dialog.FileNames, false);
             }
         }
 
@@ -165,15 +176,6 @@ namespace TagEverything.UI
         private void MainScrollViewer_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
         {
             EndDrag();
-        }
-
-        private void MainScrollViewer_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
-        {
-            if (sender is ScrollViewer scv)
-            {
-                scv.ScrollToVerticalOffset(scv.VerticalOffset - e.Delta);
-                e.Handled = true;
-            }
         }
 
         private void EndDrag()
@@ -263,99 +265,77 @@ namespace TagEverything.UI
             }
         }
 
-        private async System.Threading.Tasks.Task HandleFileImportAsync(string filePath)
+        private async Task RunImportsAsync(IEnumerable<string> paths, bool register)
         {
-            var metaService = Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<TagEverything.Core.Services.MetadataExtractionService>(App.ServiceProvider);
-            var hashService = Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<TagEverything.Core.Services.HashService>(App.ServiceProvider);
-            
-            var fileInfo = new System.IO.FileInfo(filePath);
-            bool isVideo = metaService.IsVideoFile(fileInfo.Extension);
-
+            _pendingImports.Enqueue((paths.ToList(), register));
+            if (_viewModel.IsImporting) return;
+            _viewModel.IsImporting = true;
+            _importCts = new CancellationTokenSource();
+            var root = App.Settings.Current.LibraryPath;
             try
             {
-                var fileHash = await hashService.CalculateSha256Async(filePath);
-                var metadataJson = await metaService.ExtractMetadataAsync(filePath, isVideo);
-                var (thumbnail, pHash) = await metaService.ExtractThumbnailAndPHashAsync(filePath, fileInfo.Extension);
-
-                var importContext = new FileImportContext
+                while (_pendingImports.TryDequeue(out var batch))
                 {
-                    FilePath = filePath,
-                    FileHash = fileHash,
-                    PHash = pHash,
-                    Thumbnail = thumbnail,
-                    IsVideo = isVideo,
-                    MetadataJson = metadataJson,
-                    Size = fileInfo.Length,
-                    CreationTime = fileInfo.CreationTime,
-                    LastWriteTime = fileInfo.LastWriteTime
-                };
-
-                using var scope = Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.CreateScope(App.ServiceProvider);
-                var dbContext = Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<TagEverything.Core.Data.LibraryDbContext>(scope.ServiceProvider);
-                
-                // Find duplicate
-                var exactDuplicate = dbContext.Files.FirstOrDefault(f => f.Hash == fileHash || (f.Size == importContext.Size && f.Size > 0));
-
-                FileRecord? similarFile = exactDuplicate;
-                bool isExact = exactDuplicate != null;
-
-                if (!isExact && pHash != 0)
-                {
-                    // Check PHash similarity
-                    var allHashes = dbContext.Files.Select(f => new { f.Id, f.PHash }).ToList();
-                    int? bestMatchId = null;
-                    int minDistance = int.MaxValue;
-
-                    foreach (var h in allHashes)
+                    var progress = new Progress<ImportQueueProgress>(p =>
                     {
-                        if (h.PHash == 0) continue;
-                        int distance = System.Numerics.BitOperations.PopCount(h.PHash ^ pHash);
-                        if (distance <= 10 && distance < minDistance) // 10 bits difference threshold for highly similar
+                        _viewModel.ImportStatus = $"{p.Index}/{p.Total} · {p.FileName} · {p.Stage}";
+                        _viewModel.ImportProgress = p.Percent;
+                    });
+                    var queue = App.ServiceProvider.GetRequiredService<ImportQueueService>();
+                    var result = await queue.RunAsync(batch.Paths, batch.Register, async (context, token) =>
+                    {
+                        using var scope = App.ServiceProvider.CreateScope();
+                        var db = scope.ServiceProvider.GetRequiredService<TagEverything.Core.Data.LibraryDbContext>();
+                        var feedback = App.ServiceProvider.GetRequiredService<SimilarityFeedbackService>();
+                        var duplicate = await _duplicateDetectionService.FindDuplicateAsync(db, context.FileHash, context.PHash, token,
+                            DuplicateDetectionService.ReadHashes(context.MetadataJson, context.PHash), context.IsVideo,
+                            App.Settings.Current.SimilarityThreshold, await feedback.ReadAsync(root, token));
+                        if (duplicate.File != null)
                         {
-                            minDistance = distance;
-                            bestMatchId = h.Id;
+                            var comparison = new DuplicateComparisonWindow(duplicate.File, context, duplicate.IsExact) { Owner = this };
+                            comparison.ShowDialog();
+                            if (!comparison.ProceedWithImport) return;
+                            if (comparison.MarkAsDifferent) await feedback.DismissAsync(root, duplicate.File.Hash, context.FileHash, token);
                         }
-                    }
-
-                    if (bestMatchId.HasValue)
-                    {
-                        similarFile = dbContext.Files.FirstOrDefault(f => f.Id == bestMatchId.Value);
-                    }
+                        token.ThrowIfCancellationRequested();
+                        var details = new FileDetailsWindow(context, root, token) { Owner = this };
+                        details.ShowDialog();
+                        if (!details.Confirmed && details.ImportError != null) throw details.ImportError;
+                        if (details.Confirmed) await _viewModel.LoadFilesAsync();
+                    }, progress, _importCts.Token);
+                    _failedImports.AddRange(result.Failures);
+                    _viewModel.FailedImportsCount = _failedImports.Count;
+                    _viewModel.ImportFailures = string.Join("\n", _failedImports.Select(f => $"{System.IO.Path.GetFileName(f.Path)}：{f.Error}"));
                 }
-
-                if (similarFile != null)
+                _viewModel.ImportStatus = _failedImports.Count == 0 ? "导入队列已完成" : $"{_failedImports.Count} 个文件失败，可点击重试";
+            }
+            catch (OperationCanceledException) { _pendingImports.Clear(); _viewModel.ImportStatus = "已取消剩余导入任务"; }
+            finally
+            {
+                _importCts.Dispose();
+                _importCts = null;
+                _viewModel.IsImporting = false;
+                if (!_closed)
                 {
-                    var duplicateWindow = new DuplicateComparisonWindow(similarFile, importContext, isExact)
-                    {
-                        Owner = this
-                    };
-                    
-                    duplicateWindow.ShowDialog();
-                    
-                    if (!duplicateWindow.ProceedWithImport)
-                    {
-                        return; // Cancelled
-                    }
-                }
-
-                // Show FileDetailsWindow
-                var detailsWindow = new FileDetailsWindow(importContext);
-                detailsWindow.Owner = this;
-                
-                // Use ShowDialog to block the loop until this file is completely processed
-                detailsWindow.ShowDialog();
-                
-                if (detailsWindow.Confirmed)
-                {
+                    App.ServiceProvider.GetRequiredService<LibraryMonitorService>().RequestRefresh();
                     await _viewModel.LoadFilesAsync();
                 }
             }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"解析文件失败: {ex.Message}");
-            }
         }
 
+        private void CancelImport_Click(object sender, RoutedEventArgs e) => _importCts?.Cancel();
+        private async void ImportUntracked_Click(object sender, RoutedEventArgs e)
+        {
+            var monitor = App.ServiceProvider.GetRequiredService<LibraryMonitorService>();
+            await RunImportsAsync(monitor.UntrackedFiles.ToList(), true);
+        }
+        private async void RetryImports_Click(object sender, RoutedEventArgs e)
+        {
+            var failed = _failedImports.ToList();
+            _failedImports.Clear();
+            _viewModel.FailedImportsCount = 0;
+            foreach (var group in failed.GroupBy(f => f.RegisterInPlace)) await RunImportsAsync(group.Select(f => f.Path), group.Key);
+        }
         private void DeleteSelectedFiles_Click(object sender, RoutedEventArgs e)
         {
             var selectedItems = _viewModel.Files.Where(f => f.IsSelected).ToList();
@@ -430,8 +410,6 @@ namespace TagEverything.UI
                     
                     _viewModel.UpdateFilteredAvailableTags();
                     
-                    // Trigger search
-                    _ = _viewModel.LoadFilesAsync();
                 }
             }
         }

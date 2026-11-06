@@ -5,6 +5,7 @@ namespace TagEverything.Core.Models
     public class FileImportContext
     {
         public string FilePath { get; set; } = string.Empty;
+        public bool RegisterInPlace { get; set; }
         public string FileHash { get; set; } = string.Empty;
         public ulong PHash { get; set; }
         public byte[]? Thumbnail { get; set; }

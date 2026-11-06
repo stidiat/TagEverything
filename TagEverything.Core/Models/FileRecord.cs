@@ -12,7 +12,18 @@ namespace TagEverything.Core.Models
         public string SavedName { get; set; } = string.Empty;
         public string RelativePath { get; set; } = string.Empty;
         public long Size { get; set; }
+        [System.ComponentModel.DataAnnotations.Schema.NotMapped]
+        public string FileType => string.IsNullOrEmpty(System.IO.Path.GetExtension(OriginalName))
+            ? "无扩展名"
+            : System.IO.Path.GetExtension(OriginalName).TrimStart('.').ToUpperInvariant();
         public string Hash { get; set; } = string.Empty;
+        public string? FileIdentity { get; set; }
+        public bool IsMissing { get; set; }
+
+        [System.ComponentModel.DataAnnotations.Schema.NotMapped]
+        public string DisplayName => IsMissing ? $"{OriginalName}（文件缺失）" : OriginalName;
+        [System.ComponentModel.DataAnnotations.Schema.NotMapped]
+        public string? AvailableRelativePath => IsMissing ? null : RelativePath;
         public ulong PHash { get; set; }
         public bool IsVideo { get; set; }
         public DateTime AddedAt { get; set; } = DateTime.UtcNow;

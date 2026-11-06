@@ -1,0 +1,56 @@
+name: Windows validation
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - name: Audit NuGet dependencies
+        shell: pwsh
+        run: dotnet restore TagEverything.sln --force -p:NuGetAudit=true -p:NuGetAuditMode=all -warnaserror:NU1900,NU1901,NU1902,NU1903,NU1904,NU1905
+      - name: Build and test
+        shell: pwsh
+        run: |
+          dotnet build TagEverything.sln -c Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          dotnet test TagEverything.Tests/TagEverything.Tests.csproj -c Release --no-build --logger trx --results-directory TestResults
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          dotnet run --project TagEverything.UI.SmokeTests -c Release --no-build
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Catalog benchmark
+        shell: pwsh
+        run: dotnet run --project TagEverything.Benchmarks -c Release --no-build -- 10000 artifacts/performance.json
+      - name: Video smoke
+        shell: pwsh
+        run: |
+          choco install ffmpeg --yes --no-progress
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $env:TAGEVERYTHING_FFMPEG_DIR = Split-Path (Get-Command ffmpeg.exe).Source
+          dotnet run --project TagEverything.UI.SmokeTests -c Release --no-build -- --media
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Publish
+        shell: pwsh
+        run: |
+          ./build.ps1
+          ./scripts/test-publish.ps1
+      - name: Compile installer
+        shell: pwsh
+        run: |
+          choco install innosetup --yes --no-progress
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          ./scripts/build-installer.ps1 -SmokeTest
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: validation-results
+          path: |
+            TestResults/**
+            artifacts/**
+            publish/**
+            Installer/**

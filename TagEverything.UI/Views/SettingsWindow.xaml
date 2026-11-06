@@ -5,11 +5,11 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
         mc:Ignorable="d"
-        Title="设置" Height="300" Width="500"
+        Title="设置" Height="440" Width="600"
         WindowStartupLocation="CenterOwner"
-        Style="{StaticResource MaterialDesignWindow}">
+        Style="{StaticResource WorkspaceWindow}">
 
-    <Grid Margin="16">
+    <Grid Margin="28">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -25,16 +25,22 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <TextBox Grid.Column="0" Text="{Binding LibraryPath}" IsReadOnly="True" 
-                         materialDesign:HintAssist.Hint="当前库路径" 
+                <TextBox Grid.Column="0" Text="{Binding LibraryPath}" IsReadOnly="True"
+                         materialDesign:HintAssist.Hint="当前库路径"
                          VerticalAlignment="Center" Margin="0,0,8,0"/>
-                <Button Grid.Column="1" Content="更改路径" Click="ChangePath_Click" 
-                        Style="{StaticResource MaterialDesignOutlinedButton}"/>
+                <Button x:Name="ChangePathButton" Grid.Column="1" Content="更改路径" Click="ChangePath_Click"
+                        Style="{StaticResource QuietButton}"/>
             </Grid>
+            <TextBlock Text="画面相似阈值（dHash，越小越严格）" FontWeight="SemiBold" Margin="0,24,0,8"/>
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Right" Text="{Binding SimilarityThreshold, Mode=OneWay}" Width="32" TextAlignment="Right" VerticalAlignment="Center"/>
+                <Slider Minimum="0" Maximum="64" TickFrequency="1" IsSnapToTickEnabled="True" Value="{Binding SimilarityThreshold, Mode=TwoWay}"/>
+            </DockPanel>
+            <TextBlock Text="默认 10；视频需各采样帧均在阈值内。误报可在比较窗口中标记。" Foreground="{StaticResource MutedBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0"/>
         </StackPanel>
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
-            <Button Content="关闭" Style="{StaticResource MaterialDesignRaisedButton}" Click="Close_Click"/>
+            <Button Content="关闭" Style="{StaticResource PrimaryButton}" Click="Close_Click"/>
         </StackPanel>
     </Grid>
 </Window>

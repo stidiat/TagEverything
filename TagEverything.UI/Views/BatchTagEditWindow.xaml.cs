@@ -89,7 +89,7 @@ namespace TagEverything.UI.Views
         {
             if (e.Key == Key.Enter)
             {
-                // Just prevent default beep or whatever, don't process tag
+                ProcessTagInput();
                 e.Handled = true;
             }
         }

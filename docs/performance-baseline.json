@@ -1,0 +1,13 @@
+{
+  "RecordedAtUtc": "2026-10-29T16:41:33.5931905Z",
+  "Runtime": "9.0.19",
+  "OS": "Microsoft Windows NT 10.0.26100.0",
+  "FileCount": 10000,
+  "ThumbnailBytesPerFile": 4096,
+  "PageSize": 100,
+  "Iterations": 30,
+  "MedianMilliseconds": 24.1647,
+  "P95Milliseconds": 27.86,
+  "AllocatedBytesPerPage": 489479,
+  "Scope": "SQLite catalog count \u002B filtered metadata/tag page. Excludes UI, disk media decoding and library seeding."
+}

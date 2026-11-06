@@ -5,10 +5,10 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
         mc:Ignorable="d"
-        Title="可能存在重复文件" Height="600" Width="800"
-        WindowStartupLocation="CenterOwner">
+        Title="可能存在重复文件" Height="680" Width="940"
+        WindowStartupLocation="CenterOwner" Style="{StaticResource WorkspaceWindow}">
 
-    <Grid Margin="16">
+    <Grid Margin="28">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -16,11 +16,11 @@
         </Grid.RowDefinitions>
 
         <StackPanel Grid.Row="0" Margin="0,0,0,16">
-            <TextBlock Text="{Binding MatchTypeText}" 
+            <TextBlock Text="{Binding MatchTypeText}"
                        Foreground="{Binding MatchTypeBrush}"
                        FontWeight="Bold"
                        Style="{StaticResource MaterialDesignHeadline5TextBlock}" Margin="0,0,0,8"/>
-            <TextBlock Text="请核对以下文件信息，确认是否继续导入：" 
+            <TextBlock Text="请核对以下文件信息，确认是否继续导入："
                        Style="{StaticResource MaterialDesignSubtitle1TextBlock}"/>
         </StackPanel>
 
@@ -36,9 +36,9 @@
                 <materialDesign:Card Grid.Column="0" Margin="8" Padding="16">
                     <StackPanel>
                         <TextBlock Text="库中已存文件" FontWeight="Bold" FontSize="16" Margin="0,0,0,16" HorizontalAlignment="Center"/>
-                        
+
                         <Image Source="{Binding ExistingThumbnailImage}" Height="150" Margin="0,0,0,16" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
-                        
+
                         <TextBlock Text="文件名:" FontWeight="Bold"/>
                         <TextBlock Text="{Binding ExistingFileName}" TextWrapping="Wrap" Margin="0,0,0,8"/>
 
@@ -94,9 +94,10 @@
 
         <!-- Buttons -->
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
-            <Button Content="取消" Style="{StaticResource MaterialDesignOutlinedButton}" 
+            <Button x:Name="DifferentButton" Content="误报，不再提示此对文件" Style="{StaticResource QuietButton}" Margin="0,0,8,0" Click="Different_Click"/>
+            <Button Content="取消" Style="{StaticResource QuietButton}"
                     Margin="0,0,8,0" Click="Cancel_Click"/>
-            <Button Content="继续导入" Style="{StaticResource MaterialDesignRaisedButton}" 
+            <Button Content="继续导入" Style="{StaticResource PrimaryButton}"
                     Click="Import_Click"/>
         </StackPanel>
     </Grid>

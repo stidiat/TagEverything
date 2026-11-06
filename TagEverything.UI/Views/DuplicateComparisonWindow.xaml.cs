@@ -20,6 +20,7 @@ namespace TagEverything.UI.Views
     public partial class DuplicateComparisonWindow : Window
     {
         public bool ProceedWithImport { get; private set; } = false;
+        public bool MarkAsDifferent { get; private set; }
 
         public ImageSource? ExistingThumbnailImage { get; set; }
         public ImageSource? NewThumbnailImage { get; set; }
@@ -40,14 +41,15 @@ namespace TagEverything.UI.Views
 
             if (isExactMatch)
             {
-                MatchTypeText = "检测到完全重复 (Hash或大小相同)";
+                MatchTypeText = "检测到完全重复（SHA-256 相同）";
                 MatchTypeBrush = Brushes.Red;
             }
             else
             {
-                MatchTypeText = "检测到高度相似 (内容或画面相近)";
+                MatchTypeText = "检测到画面相似（dHash，视频使用多帧比较）";
                 MatchTypeBrush = Brushes.Orange;
             }
+            DifferentButton.Visibility = isExactMatch ? Visibility.Collapsed : Visibility.Visible;
 
             ExistingFileName = existingFile.OriginalName;
             NewFileName = Path.GetFileName(newFile.FilePath);
@@ -163,6 +165,13 @@ namespace TagEverything.UI.Views
             }
             image.Freeze();
             return image;
+        }
+
+        private void Different_Click(object sender, RoutedEventArgs e)
+        {
+            MarkAsDifferent = true;
+            ProceedWithImport = true;
+            Close();
         }
 
         private void Import_Click(object sender, RoutedEventArgs e)
